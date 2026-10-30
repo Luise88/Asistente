@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Asistente</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #273449; --text: #e2e8f0;
+    --muted: #94a3b8; --accent: #38bdf8; --accent2: #0ea5e9; --danger: #f87171;
+    --me: #0369a1; --ok: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top));
+    background: var(--panel); border-bottom: 1px solid #334155; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .sub { font-size: 12px; color: var(--muted); }
+  .iconbtn { background: none; border: none; color: var(--text); font-size: 22px;
+    padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+  .iconbtn:active { background: var(--panel2); }
+  #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; line-height: 1.45;
+    font-size: 15px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.me { align-self: flex-end; background: var(--me); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--panel); border-bottom-left-radius: 4px; }
+  .msg.err { align-self: center; background: #3f1d1d; color: #fecaca; font-size: 13px; }
+  .msg .tag { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .msg.bot .speak { background: none; border: none; color: var(--accent); font-size: 13px;
+    padding: 0; margin-top: 6px; cursor: pointer; }
+  .welcome { color: var(--muted); text-align: center; margin: auto; font-size: 15px; line-height: 1.6; padding: 0 12px; }
+  .typing { align-self: flex-start; color: var(--muted); font-size: 14px; padding: 4px 8px; }
+  footer { padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    background: var(--panel); border-top: 1px solid #334155; }
+  #live { min-height: 18px; font-size: 13px; color: var(--accent); text-align: center; margin-bottom: 6px; }
+  .bar { display: flex; gap: 8px; align-items: center; }
+  #txt { flex: 1; background: var(--panel2); border: 1px solid #334155; color: var(--text);
+    border-radius: 22px; padding: 12px 16px; font-size: 16px; outline: none; }
+  #txt:focus { border-color: var(--accent); }
+  #send { background: var(--panel2); color: var(--text); border: none; width: 46px; height: 46px;
+    border-radius: 50%; font-size: 20px; cursor: pointer; }
+  #mic { background: var(--accent2); color: white; border: none; width: 60px; height: 60px;
+    border-radius: 50%; font-size: 26px; cursor: pointer; flex-shrink: 0;
+    box-shadow: 0 4px 14px rgba(14,165,233,.4); transition: transform .1s; }
+  #mic:active { transform: scale(.95); }
+  #mic.listening { background: var(--danger); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(248,113,113,.6)} 70%{box-shadow:0 0 0 16px rgba(248,113,113,0)} 100%{box-shadow:0 0 0 0 rgba(248,113,113,0)} }
+
+  /* Ajustes */
+  #settings { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
+    align-items: flex-end; justify-content: center; z-index: 10; }
+  #settings.open { display: flex; }
+  .sheet { background: var(--panel); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
+    border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+  .sheet h2 { margin: 0 0 4px; font-size: 18px; }
+  .sheet h3 { margin: 18px 0 6px; font-size: 14px; color: var(--accent); }
+  .sheet label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  .sheet input[type=text], .sheet input[type=password], .sheet select {
+    width: 100%; background: var(--panel2); border: 1px solid #334155; color: var(--text);
+    border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; font-size: 15px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  .btns { display: flex; gap: 10px; margin-top: 20px; }
+  .btn { flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 15px; cursor: pointer; }
+  .btn.primary { background: var(--accent2); color: white; }
+  .btn.ghost { background: var(--panel2); color: var(--text); }
+  .btn.warn { background: #3f1d1d; color: #fecaca; }
+  .status { font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Asistente</h1>
+    <div class="sub" id="subtitle">Listo</div>
+  </div>
+  <div>
+    <button class="iconbtn" id="btnMute" title="Voz activada">🔊</button>
+    <button class="iconbtn" id="btnSettings" title="Ajustes">⚙️</button>
+  </div>
+</header>
+
+<main id="chat">
+  <div class="welcome" id="welcome">
+    👋 Hola. Tocá el micrófono y hablame,<br>o escribí tu consulta abajo.<br><br>
+    <small>Primero cargá tu clave de Gemini en ⚙️ Ajustes.</small>
+  </div>
+</main>
+
+<footer>
+  <div id="live"></div>
+  <div class="bar">
+    <input id="txt" type="text" placeholder="Escribí tu consulta..." autocomplete="off" enterkeyhint="send">
+    <button id="send" title="Enviar">➤</button>
+    <button id="mic" title="Hablar">🎤</button>
+  </div>
+</footer>
+
+<div id="settings">
+  <div class="sheet">
+    <h2>⚙️ Ajustes</h2>
+    <div class="hint">Las claves quedan guardadas solo en este teléfono. No se suben a GitHub.</div>
+
+    <h3>1. Gemini (principal, gratis)</h3>
+    <label for="geminiKey">Clave de API de Gemini</label>
+    <input id="geminiKey" type="password" placeholder="AQ.Ab... o AIza..." autocomplete="off">
+    <div class="hint">Se obtiene gratis en aistudio.google.com → "Get API key".</div>
+    <label for="geminiModel">Modelo de Gemini</label>
+    <input id="geminiModel" type="text" placeholder="gemini-3.8-flash">
+
+    <h3>2. Claude (respaldo, opcional)</h3>
+    <label for="claudeKey">Clave de API de Claude</label>
+    <input id="claudeKey" type="password" placeholder="sk-ant-... (opcional)" autocomplete="off">
+    <div class="hint">Solo se usa si Gemini falla o llega a su límite. Es pago por uso.</div>
+    <label for="claudeModel">Modelo de Claude</label>
+    <input id="claudeModel" type="text" placeholder="claude-haiku-5-5">
+
+    <h3>3. Voz y personalización</h3>
+    <label for="userName">¿Cómo querés que te llame?</label>
+    <input id="userName" type="text" placeholder="Tu nombre">
+    <label for="voiceSel">Voz para las respuestas</label>
+    <select id="voiceSel"></select>
+    <div class="row"><span>Leer respuestas en voz alta</span><input id="autoSpeak" type="checkbox"></div>
+    <div class="row"><span>Enviar automáticamente al terminar de hablar</span><input id="autoSend" type="checkbox"></div>
+
+    <h3>4. Probar conexión</h3>
+    <div class="btns" style="margin-top:6px">
+      <button class="btn ghost" id="testGemini">Probar Gemini</button>
+      <button class="btn ghost" id="testClaude">Probar Claude</button>
+    </div>
+    <div class="status" id="testStatus"></div>
+
+    <div class="btns">
+      <button class="btn warn" id="clearChat">Borrar conversación</button>
+    </div>
+    <div class="btns">
+      <button class="btn ghost" id="closeSettings">Cancelar</button>
+      <button class="btn primary" id="saveSettings">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============ CONFIGURACIÓN ============ */
+const DEFAULTS = {
+  geminiKey: '', geminiModel: 'gemini-3.8-flash',
+  claudeKey: '', claudeModel: 'claude-haiku-5-5',
+  userName: '', voiceName: '', autoSpeak: true, autoSend: true
+};
+const MAX_HISTORY = 12; // mensajes recordados para dar contexto
+
+function store(key, val) {
+  try {
+    if (val === undefined) return JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch (e) { return null; }
+}
+let cfg = Object.assign({}, DEFAULTS, store('cfg') || {});
+let history = store('history') || [];
+
+/* ============ ELEMENTOS ============ */
+const $ = id => document.getElementById(id);
+const chat = $('chat'), txt = $('txt'), mic = $('mic'), live = $('live'), subtitle = $('subtitle');
+
+/* ============ INSTRUCCIONES PARA LA IA ============ */
+function systemPrompt() {
+  const now = new Date();
+  const fecha = now.toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const hora = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  return [
+    'Sos un asistente personal por voz, amable y eficiente. Hablás en español rioplatense (voseo).',
+    cfg.userName ? `El usuario se llama ${cfg.userName}.` : '',
+    `Hoy es ${fecha} y son las ${hora} (hora de Argentina).`,
+    'Tus respuestas se leen en voz alta: sé breve y claro (2 a 4 oraciones salvo que pidan detalle).',
+    'No uses tablas, símbolos raros ni listas largas. Si hace falta enumerar, usá frases cortas.',
+    'Si te piden algo que todavía no podés hacer (agenda, recordatorios, mandar mensajes, clima o noticias en tiempo real), ',
+    'decí con naturalidad que esa función se está agregando pronto, y ayudá en lo que puedas.',
+    'Si no sabés algo o puede estar desactualizado, decilo.'
+  ].join(' ');
+}
+
+/* ============ PROVEEDORES DE IA ============ */
+async function askGemini(msgs) {
+  if (!cfg.geminiKey) throw new Error('Falta la clave de Gemini');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`;
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt() }] },
+    contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
+  });
+  // Intento 1: clave en el encabezado (forma recomendada)
+  let res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body });
+  // Intento 2: si la rechaza por autenticación, la envía en la dirección (compatibilidad con claves "AQ.")
+  if (res.status === 401 || res.status === 403) {
+    res = await fetch(url + '?key=' + encodeURIComponent(cfg.geminiKey), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${data.error?.message || res.statusText}`);
+  const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+  if (!text) throw new Error('Gemini no devolvió respuesta');
+  return text;
+}
+
+async function askClaude(msgs) {
+  if (!cfg.claudeKey) throw new Error('Falta la clave de Claude');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': cfg.claudeKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: cfg.claudeModel, max_tokens: 1024, system: systemPrompt(),
+      messages: msgs.map(m => ({ role: m.role, content: m.content }))
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Claude ${res.status}: ${data.error?.message || res.statusText}`);
+  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+  if (!text) throw new Error('Claude no devolvió respuesta');
+  return text;
+}
+
+// Primero Gemini; si falla y hay clave de Claude, usa Claude.
+async function askAI(msgs) {
+  const errors = [];
+  if (cfg.geminiKey) {
+    try { return { text: await askGemini(msgs), by: 'Gemini' }; }
+    catch (e) { errors.push(e.message); }
+  }
+  if (cfg.claudeKey) {
+    try { return { text: await askClaude(msgs), by: 'Claude (respaldo)' }; }
+    catch (e) { errors.push(e.message); }
+  }
+  if (!cfg.geminiKey && !cfg.claudeKey) throw new Error('No hay ninguna clave cargada. Abrí ⚙️ Ajustes.');
+  throw new Error(errors.join(' | '));
+}
+
+/* ============ CHAT ============ */
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function formatText(s) {
+  return escapeHtml(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|\s)\*(?!\s)(.+?)\*(?=\s|$)/g, '$1<i>$2</i>');
+}
+function addMsg(kind, text, tag) {
+  const w = $('welcome'); if (w) w.remove();
+  const div = document.createElement('div');
+  div.className = 'msg ' + kind;
+  div.innerHTML = formatText(text);
+  if (tag) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = tag; div.appendChild(t); }
+  if (kind === 'bot') {
+    const b = document.createElement('button'); b.className = 'speak'; b.textContent = '🔈 Escuchar';
+    b.onclick = () => speak(text); div.appendChild(b);
+  }
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+function renderHistory() {
+  history.forEach(m => addMsg(m.role === 'user' ? 'me' : 'bot', m.content, m.by));
+}
+
+let busy = false;
+async function send(text) {
+  text = (text || '').trim();
+  if (!text || busy) return;
+  busy = true; txt.value = ''; live.textContent = '';
+  stopSpeaking();
+  addMsg('me', text);
+  history.push({ role: 'user', content: text });
+
+  const typing = document.createElement('div');
+  typing.className = 'typing'; typing.textContent = 'Pensando…';
+  chat.appendChild(typing); chat.scrollTop = chat.scrollHeight;
+  subtitle.textContent = 'Pensando…';
+
+  try {
+    const { text: answer, by } = await askAI(history.slice(-MAX_HISTORY));
+    typing.remove();
+    addMsg('bot', answer, by);
+    history.push({ role: 'assistant', content: answer, by });
+    history = history.slice(-40);
+    store('history', history);
+    subtitle.textContent = 'Respondió ' + by;
+    if (cfg.autoSpeak) speak(answer);
+  } catch (e) {
+    typing.remove();
+    history.pop(); // no guardar la pregunta sin respuesta
+    addMsg('err', '⚠️ ' + e.message);
+    subtitle.textContent = 'Error';
+  } finally { busy = false; }
+}
+
+/* ============ VOZ: HABLAR (texto a voz) ============ */
+let voices = [];
+function loadVoices() {
+  voices = speechSynthesis.getVoices().filter(v => v.lang && v.lang.toLowerCase().startsWith('es'));
+  const sel = $('voiceSel'); sel.innerHTML = '';
+  const auto = document.createElement('option'); auto.value = ''; auto.textContent = 'Automática (español)';
+  sel.appendChild(auto);
+  voices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.appendChild(o); });
+  sel.value = cfg.voiceName;
+}
+function pickVoice() {
+  if (cfg.voiceName) { const v = voices.find(v => v.name === cfg.voiceName); if (v) return v; }
+  const pref = ['es-ar', 'es-us', 'es-419', 'es-mx', 'es-es'];
+  for (const p of pref) { const v = voices.find(v => v.lang.toLowerCase().replace('_', '-') === p); if (v) return v; }
+  return voices[0] || null;
+}
+function cleanForSpeech(s) {
+  return s.replace(/[*_#`>|]/g, '').replace(/https?:\/\/\S+/g, 'el enlace').replace(/\s+/g, ' ').trim();
+}
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  stopSpeaking();
+  // Chrome corta textos largos: se divide en oraciones
+  const parts = cleanForSpeech(text).match(/[^.!?]+[.!?]*/g) || [text];
+  const voice = pickVoice();
+  parts.forEach(p => {
+    const u = new SpeechSynthesisUtterance(p.trim());
+    u.lang = voice ? voice.lang : 'es-AR';
+    if (voice) u.voice = voice;
+    u.rate = 1.05;
+    speechSynthesis.speak(u);
+  });
+}
+function stopSpeaking() { if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+if ('speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+/* ============ VOZ: ESCUCHAR (voz a texto) ============ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, finalText = '';
+
+function startListening() {
+  if (!SR) { addMsg('err', '⚠️ Este navegador no reconoce voz. Usá Chrome en Android.'); return; }
+  stopSpeaking();
+  rec = new SR();
+  rec.lang = 'es-AR';
+  rec.interimResults = true;
+  rec.continuous = false;
+  finalText = '';
+  rec.onstart = () => { listening = true; mic.classList.add('listening'); mic.textContent = '■'; live.textContent = 'Escuchando…'; subtitle.textContent = 'Escuchando…'; };
+  rec.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    live.textContent = (finalText + ' ' + interim).trim() || 'Escuchando…';
+  };
+  rec.onerror = e => {
+    const msgs = { 'not-allowed': 'Permiso de micrófono denegado. Habilitalo en la configuración del sitio.',
+      'no-speech': 'No te escuché. Probá de nuevo.', 'network': 'Sin conexión para reconocer la voz.' };
+    live.textContent = msgs[e.error] || ('Error de voz: ' + e.error);
+  };
+  rec.onend = () => {
+    listening = false; mic.classList.remove('listening'); mic.textContent = '🎤';
+    subtitle.textContent = 'Listo';
+    const said = finalText.trim();
+    if (said) {
+      if (cfg.autoSend) send(said);
+      else { txt.value = said; live.textContent = 'Revisá el texto y tocá ➤'; txt.focus(); }
+    }
+  };
+  try { rec.start(); } catch (e) { /* ya estaba escuchando */ }
+}
+function stopListening() { if (rec) rec.stop(); }
+
+mic.onclick = () => listening ? stopListening() : startListening();
+$('send').onclick = () => send(txt.value);
+txt.addEventListener('keydown', e => { if (e.key === 'Enter') send(txt.value); });
+
+/* ============ BOTÓN SILENCIO ============ */
+function paintMute() { $('btnMute').textContent = cfg.autoSpeak ? '🔊' : '🔇'; }
+$('btnMute').onclick = () => { cfg.autoSpeak = !cfg.autoSpeak; if (!cfg.autoSpeak) stopSpeaking(); store('cfg', cfg); paintMute(); };
+
+/* ============ AJUSTES ============ */
+function openSettings() {
+  $('geminiKey').value = cfg.geminiKey; $('geminiModel').value = cfg.geminiModel;
+  $('claudeKey').value = cfg.claudeKey; $('claudeModel').value = cfg.claudeModel;
+  $('userName').value = cfg.userName; $('voiceSel').value = cfg.voiceName;
+  $('autoSpeak').checked = cfg.autoSpeak; $('autoSend').checked = cfg.autoSend;
+  $('testStatus').textContent = '';
+  $('settings').classList.add('open');
+}
+function readForm() {
+  return {
+    geminiKey: $('geminiKey').value.trim(), geminiModel: $('geminiModel').value.trim() || DEFAULTS.geminiModel,
+    claudeKey: $('claudeKey').value.trim(), claudeModel: $('claudeModel').value.trim() || DEFAULTS.claudeModel,
+    userName: $('userName').value.trim(), voiceName: $('voiceSel').value,
+    autoSpeak: $('autoSpeak').checked, autoSend: $('autoSend').checked
+  };
+}
+$('btnSettings').onclick = openSettings;
+$('closeSettings').onclick = () => $('settings').classList.remove('open');
+$('saveSettings').onclick = () => {
+  cfg = Object.assign(cfg, readForm()); store('cfg', cfg); paintMute();
+  $('settings').classList.remove('open'); subtitle.textContent = 'Ajustes guardados';
+};
+async function test(fn, name) {
+  const saved = cfg; cfg = Object.assign({}, cfg, readForm());
+  const st = $('testStatus'); st.style.color = 'var(--muted)'; st.textContent = `Probando ${name}…`;
+  try {
+    const r = await fn([{ role: 'user', content: 'Respondé solo: funcionando' }]);
+    st.style.color = 'var(--ok)'; st.textContent = `✅ ${name} responde: "${r.slice(0, 60)}"`;
+  } catch (e) { st.style.color = 'var(--danger)'; st.textContent = `❌ ${e.message}`; }
+  finally { cfg = saved; }
+}
+$('testGemini').onclick = () => test(askGemini, 'Gemini');
+$('testClaude').onclick = () => test(askClaude, 'Claude');
+$('clearChat').onclick = () => {
+  if (!confirm('¿Borrar toda la conversación?')) return;
+  history = []; store('history', history);
+  chat.innerHTML = '<div class="welcome" id="welcome">Conversación borrada. Tocá 🎤 para empezar.</div>';
+  $('settings').classList.remove('open');
+};
+
+/* ============ INICIO ============ */
+paintMute();
+renderHistory();
+if (!cfg.geminiKey && !cfg.claudeKey) setTimeout(openSettings, 400);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
