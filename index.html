@@ -138,6 +138,7 @@
     <button class="chip" data-q="Clima">☀️ Clima</button>
     <button class="chip" data-q="Mar">🌊 Mar</button>
     <button class="chip" data-q="Noticias">📰 Noticias</button>
+    <button class="chip" data-q="Noticias de Comodoro">📍 Comodoro</button>
     <button class="chip" data-q="Noticias de Argentina">🇦🇷 Argentina</button>
     <button class="chip" data-q="Noticias del mundo">🌍 Mundo</button>
   </div>
@@ -728,12 +729,13 @@ function diverse(items, n) {
   while (out.length < n && queues.some(q => q.length)) queues.forEach(q => { if (q.length && out.length < n) out.push(q.shift()); });
   return out;
 }
-const NOT_TOPIC = /^(hoy|ahora|la argentina|argentina|el pais|pais|el mundo|mundo|ultimo momento|internacionales?|nacionales?|locales?|del dia)$/;
+const NOT_TOPIC = /^(hoy|ahora|la argentina|argentina|el pais|pais|el mundo|mundo|ultimo momento|internacionales?|nacionales?|locales?|del dia|comodoro( rivadavia)?|chubut|la zona|mi ciudad|la ciudad)$/;
 async function buildNews(t, max = 8, original = '') {
   const data = await loadNews();
   let items = data.items;
   let scope = 'todas';
-  if (/argentin|nacional|\bpais\b|local/.test(t)) { scope = 'Argentina'; items = items.filter(i => i.region === 'ar'); }
+  if (/comodoro|chubut|local|patagoni|zona|ciudad/.test(t)) { scope = 'Comodoro'; items = items.filter(i => i.region === 'local'); }
+  else if (/argentin|nacional|\bpais\b/.test(t)) { scope = 'Argentina'; items = items.filter(i => i.region === 'ar' || i.region === 'local'); }
   else if (/mundo|internacional|exterior/.test(t)) { scope = 'Mundo'; items = items.filter(i => i.region === 'mundo'); }
 
   let topic = null, note = '';

@@ -4,7 +4,10 @@ y las guarda en alertas.json. Lo ejecuta GitHub Actions junto con noticias.py.
 La app filtra las alertas por tu zona (⚙️ Ajustes → "Zona para alertas del SMN").
 No usa IA ni librerías externas.
 """
+import html
 import json
+import re
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -73,15 +76,29 @@ def enlaces(root):
     return [l for l in dict.fromkeys(links) if l != FEED]
 
 
+def enlaces_html(texto, base):
+    """Si el SMN devuelve una página web, busca en ella los enlaces a archivos de alertas."""
+    hrefs = re.findall(r'href=["\']([^"\']+)', texto, re.I)
+    urls = [urllib.parse.urljoin(base, html.unescape(h)) for h in hrefs]
+    return [u for u in dict.fromkeys(urls) if re.search(r"(\.xml|cap|alert|aviso)", u, re.I) and u != base]
+
+
 def main():
     ahora = datetime.now(timezone.utc).isoformat()
     try:
-        root = ET.fromstring(bajar(FEED))
-        print("Formato del canal:", local(root.tag))
-        alertas = leer_cap(root)
+        crudo = bajar(FEED)
+        try:
+            root = ET.fromstring(crudo)
+            print("Formato del canal: XML,", local(root.tag))
+            alertas = leer_cap(root)
+            links = [] if alertas else enlaces(root)
+        except ET.ParseError:
+            texto = crudo.decode("utf-8", "ignore")
+            print("El canal devolvió una página web (no XML). Inicio:")
+            print(re.sub(r"\s+", " ", texto[:600]))
+            alertas, links = [], enlaces_html(texto, FEED)
         if not alertas:
-            links = enlaces(root)
-            print(f"Enlaces encontrados: {len(links)}", links[:3])
+            print(f"Enlaces encontrados: {len(links)}", links[:5])
             for url in links[:MAX_ARCHIVOS]:
                 try:
                     alertas += leer_cap(ET.fromstring(bajar(url)))
@@ -93,6 +110,9 @@ def main():
             if k not in vistos:
                 vistos.add(k)
                 unicas.append(a)
+        if not unicas and not isinstance(locals().get("root"), ET.Element):
+            # Página web sin alertas legibles: no se puede afirmar que "no hay alertas"
+            raise RuntimeError("el SMN no devolvió alertas en un formato legible")
         datos = {"actualizado": ahora, "ok": True, "fuente": FEED, "alertas": unicas}
         print(f"OK: {len(unicas)} alertas")
     except Exception as e:

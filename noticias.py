@@ -4,30 +4,35 @@ Lo ejecuta GitHub Actions cada 30 minutos (ver .github/workflows/noticias.yml).
 No usa IA ni librerías externas.
 
 Para agregar o quitar medios, editá la lista FEEDS:
-  (nombre del medio, "ar" o "mundo", dirección del RSS)
+  (nombre del medio, "local", "ar" o "mundo", [direcciones RSS], página principal)
 """
 import html
 import json
 import re
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 
 FEEDS = [
+    # (medio, región, [direcciones RSS a probar], página principal para buscar el RSS si fallan)
+    # Comodoro / Chubut
+    ("El Patagónico", "local", ["https://www.elpatagonico.com/rss/pages/home.xml", "https://www.elpatagonico.com/rss"], "https://www.elpatagonico.com"),
+    ("ADNSUR", "local", ["https://www.adnsur.com.ar/rss/pages/home.xml", "https://www.adnsur.com.ar/rss"], "https://www.adnsur.com.ar"),
     # Argentina
-    ("Infobae", "ar", "https://www.infobae.com/arc/outboundfeeds/rss/"),
-    ("Clarín", "ar", "https://www.clarin.com/rss/lo-ultimo/"),
-    ("La Nación", "ar", "https://www.lanacion.com.ar/arc/outboundfeeds/rss/?outputType=xml"),
-    ("Página/12", "ar", "https://www.pagina12.com.ar/rss/portada"),
-    ("Ámbito", "ar", "https://www.ambito.com/rss/pages/home.xml"),
-    ("Perfil", "ar", "https://www.perfil.com/feed"),
+    ("Infobae", "ar", ["https://www.infobae.com/arc/outboundfeeds/rss/"], "https://www.infobae.com"),
+    ("Clarín", "ar", ["https://www.clarin.com/rss/lo-ultimo/"], "https://www.clarin.com"),
+    ("La Nación", "ar", ["https://www.lanacion.com.ar/arc/outboundfeeds/rss/?outputType=xml"], "https://www.lanacion.com.ar"),
+    ("Página/12", "ar", ["https://www.pagina12.com.ar/arc/outboundfeeds/rss/portada", "https://www.pagina12.com.ar/rss/secciones/el-pais/notas"], "https://www.pagina12.com.ar"),
+    ("Ámbito", "ar", ["https://www.ambito.com/rss/pages/home.xml"], "https://www.ambito.com"),
+    ("Perfil", "ar", ["https://www.perfil.com/feed"], "https://www.perfil.com"),
     # Mundo
-    ("BBC Mundo", "mundo", "https://feeds.bbci.co.uk/mundo/rss.xml"),
-    ("DW Español", "mundo", "https://rss.dw.com/xml/rss-sp-all"),
-    ("France 24", "mundo", "https://www.france24.com/es/rss"),
-    ("El País", "mundo", "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"),
-    ("CNN Español", "mundo", "https://cnnespanol.cnn.com/feed/"),
+    ("BBC Mundo", "mundo", ["https://feeds.bbci.co.uk/mundo/rss.xml"], "https://www.bbc.com/mundo"),
+    ("DW Español", "mundo", ["https://rss.dw.com/xml/rss-sp-all"], "https://www.dw.com/es"),
+    ("France 24", "mundo", ["https://www.france24.com/es/rss"], "https://www.france24.com/es/"),
+    ("El País", "mundo", ["https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"], "https://elpais.com"),
+    ("CNN Español", "mundo", ["https://cnnespanol.cnn.com/arc/outboundfeeds/rss/", "https://cnnespanol.cnn.com/feed/"], "https://cnnespanol.cnn.com"),
 ]
 
 POR_MEDIO = 12          # titulares máximos por medio
@@ -102,14 +107,48 @@ def bajar(url):
         return r.read()
 
 
+def buscar_rss(home):
+    """Entra a la página principal del medio y busca la dirección de su RSS."""
+    pagina = bajar(home).decode("utf-8", "ignore")
+    urls = []
+    for tag in re.findall(r"<link[^>]+>", pagina, re.I):
+        if re.search(r"application/(rss|atom)\+xml", tag, re.I):
+            m = re.search(r'href=["\']([^"\']+)', tag, re.I)
+            if m:
+                urls.append(urllib.parse.urljoin(home, html.unescape(m.group(1))))
+    return urls
+
+
+def leer_medio(fuente, region, urls, home):
+    probadas = set()
+    for url in urls:
+        probadas.add(url)
+        try:
+            items = parsear(bajar(url), fuente, region)
+            if items:
+                return items, url
+        except Exception:
+            pass
+    for url in buscar_rss(home):          # plan B: buscar el RSS en la portada
+        if url in probadas:
+            continue
+        try:
+            items = parsear(bajar(url), fuente, region)
+            if items:
+                return items, url + "  (encontrado en la portada: conviene copiarlo en FEEDS)"
+        except Exception:
+            pass
+    raise RuntimeError("no se encontró un RSS que funcione")
+
+
 def main():
     ahora = datetime.now(timezone.utc)
     limite = ahora - timedelta(hours=HORAS_MAX)
     todos, vistos = [], set()
-    for fuente, region, url in FEEDS:
+    for fuente, region, urls, home in FEEDS:
         try:
-            items = parsear(bajar(url), fuente, region)
-            print(f"OK    {fuente}: {len(items)} titulares")
+            items, usada = leer_medio(fuente, region, urls, home)
+            print(f"OK    {fuente}: {len(items)} titulares  <- {usada}")
         except Exception as e:
             print(f"FALLA {fuente}: {e}")
             continue
