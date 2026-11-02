@@ -73,6 +73,43 @@
   .btn.ghost { background: var(--panel2); color: var(--text); }
   .btn.warn { background: #3f1d1d; color: #fecaca; }
   .status { font-size: 13px; margin-top: 8px; }
+
+  /* Botones rápidos */
+  .quick { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; scrollbar-width: none; }
+  .quick::-webkit-scrollbar { display: none; }
+  .chip { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 18px;
+    padding: 8px 14px; font-size: 14px; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+  .chip:active { background: #334155; }
+
+  /* Tarjetas (clima, noticias) */
+  .msg.card { white-space: normal; max-width: 94%; }
+  .card h4 { margin: 0 0 8px; font-size: 15px; }
+  .card .sep { border-top: 1px solid #334155; margin: 12px 0; }
+  .wx-now { display: flex; align-items: center; gap: 12px; }
+  .wx-now .big { font-size: 40px; line-height: 1; }
+  .wx-now .temp { font-size: 30px; font-weight: 600; }
+  .wx-now .desc { font-size: 14px; color: var(--muted); }
+  .wx-grid { margin-top: 6px; display: grid; gap: 6px 10px; font-size: 14px; align-items: center; }
+  .wx-grid.g3 { grid-template-columns: auto 1fr auto; }
+  .wx-grid.g4 { grid-template-columns: auto auto 1fr auto; }
+  .wx-grid.g5 { grid-template-columns: auto auto 1fr auto auto; }
+  .wx-grid .rain { color: var(--accent); text-align: right; }
+  .wind { margin-top: 10px; font-size: 14px; }
+  .card .sub { margin-top: 12px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .card .desc { font-size: 14px; color: var(--muted); }
+  .card a { color: var(--accent); }
+  .alert { border-radius: 10px; padding: 8px 10px; margin: 6px 0; font-size: 14px; line-height: 1.35; }
+  .alert.amarilla { background: #3d3510; color: #fde68a; }
+  .alert.naranja { background: #44260c; color: #fdba74; }
+  .alert.roja { background: #450f0f; color: #fca5a5; }
+  .alert.info { background: #12324a; color: #bae6fd; }
+  .advice { margin-top: 10px; font-size: 14px; color: var(--ok); }
+  .news ol { margin: 0; padding-left: 20px; }
+  .news li { margin-bottom: 10px; font-size: 14px; line-height: 1.35; }
+  .news a { color: var(--text); text-decoration: none; }
+  .news a:active { color: var(--accent); }
+  .news .src { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .news .upd { font-size: 11px; color: var(--muted); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -96,6 +133,14 @@
 </main>
 
 <footer>
+  <div class="quick" id="quick">
+    <button class="chip" data-q="Mi día">🌅 Mi día</button>
+    <button class="chip" data-q="Clima">☀️ Clima</button>
+    <button class="chip" data-q="Mar">🌊 Mar</button>
+    <button class="chip" data-q="Noticias">📰 Noticias</button>
+    <button class="chip" data-q="Noticias de Argentina">🇦🇷 Argentina</button>
+    <button class="chip" data-q="Noticias del mundo">🌍 Mundo</button>
+  </div>
   <div id="live"></div>
   <div class="bar">
     <input id="txt" type="text" placeholder="Escribí tu consulta..." autocomplete="off" enterkeyhint="send">
@@ -131,7 +176,19 @@
     <div class="row"><span>Leer respuestas en voz alta</span><input id="autoSpeak" type="checkbox"></div>
     <div class="row"><span>Enviar automáticamente al terminar de hablar</span><input id="autoSend" type="checkbox"></div>
 
-    <h3>4. Probar conexión</h3>
+    <h3>4. Ubicación para el clima</h3>
+    <div class="row"><span>Usar mi ubicación (GPS)</span><input id="useGPS" type="checkbox"></div>
+    <label for="city">Ciudad (si no usás GPS o falla)</label>
+    <input id="city" type="text" placeholder="Ej: Rosario, Argentina">
+    <div class="hint">Si hay ciudades con el mismo nombre, agregá el país o la provincia después de una coma.</div>
+    <label for="alertZone">Zona para alertas del SMN</label>
+    <input id="alertZone" type="text" placeholder="Ej: Escalante, Comodoro">
+    <div class="hint">Palabras separadas por coma. Comodoro Rivadavia está en el departamento Escalante (Chubut).</div>
+    <label for="tideLink">Enlace a tu tabla de mareas</label>
+    <input id="tideLink" type="text" placeholder="https://tablademareas.com/...">
+    <div class="hint">Pegá la dirección de la página de tu ciudad: aparece como botón en la tarjeta 🌊 Mar.</div>
+
+    <h3>5. Probar conexión</h3>
     <div class="btns" style="margin-top:6px">
       <button class="btn ghost" id="testGemini">Probar Gemini</button>
       <button class="btn ghost" id="testClaude">Probar Claude</button>
@@ -155,7 +212,9 @@
 const DEFAULTS = {
   geminiKey: '', geminiModel: 'gemini-3.8-flash',
   claudeKey: '', claudeModel: 'claude-haiku-5-5',
-  userName: '', voiceName: '', autoSpeak: true, autoSend: true
+  userName: '', voiceName: '', autoSpeak: true, autoSend: true,
+  useGPS: true, city: '', cityGeo: null,
+  alertZone: 'Escalante, Comodoro', tideLink: 'https://tablademareas.com/'
 };
 const MAX_HISTORY = 12; // mensajes recordados para dar contexto
 
@@ -173,7 +232,7 @@ const $ = id => document.getElementById(id);
 const chat = $('chat'), txt = $('txt'), mic = $('mic'), live = $('live'), subtitle = $('subtitle');
 
 /* ============ INSTRUCCIONES PARA LA IA ============ */
-function systemPrompt() {
+function systemPrompt(extra) {
   const now = new Date();
   const fecha = now.toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const hora = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
@@ -183,18 +242,19 @@ function systemPrompt() {
     `Hoy es ${fecha} y son las ${hora} (hora de Argentina).`,
     'Tus respuestas se leen en voz alta: sé breve y claro (2 a 4 oraciones salvo que pidan detalle).',
     'No uses tablas, símbolos raros ni listas largas. Si hace falta enumerar, usá frases cortas.',
-    'Si te piden algo que todavía no podés hacer (agenda, recordatorios, mandar mensajes, clima o noticias en tiempo real), ',
+    'El clima, el mar y las noticias los resuelve la app: si te los piden sin datos, sugerí decir "clima", "mar" o "noticias", o tocar los botones de abajo.',
+    'Si te piden algo que todavía no podés hacer (agenda, recordatorios, mandar mensajes o correos), ',
     'decí con naturalidad que esa función se está agregando pronto, y ayudá en lo que puedas.',
     'Si no sabés algo o puede estar desactualizado, decilo.'
-  ].join(' ');
+  ].join(' ') + (extra ? '\n\n' + extra : '');
 }
 
 /* ============ PROVEEDORES DE IA ============ */
-async function askGemini(msgs) {
+async function askGemini(msgs, extra) {
   if (!cfg.geminiKey) throw new Error('Falta la clave de Gemini');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`;
   const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: systemPrompt() }] },
+    systemInstruction: { parts: [{ text: systemPrompt(extra) }] },
     contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
     generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
   });
@@ -211,7 +271,7 @@ async function askGemini(msgs) {
   return text;
 }
 
-async function askClaude(msgs) {
+async function askClaude(msgs, extra) {
   if (!cfg.claudeKey) throw new Error('Falta la clave de Claude');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -222,7 +282,7 @@ async function askClaude(msgs) {
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: cfg.claudeModel, max_tokens: 1024, system: systemPrompt(),
+      model: cfg.claudeModel, max_tokens: 1024, system: systemPrompt(extra),
       messages: msgs.map(m => ({ role: m.role, content: m.content }))
     })
   });
@@ -234,18 +294,511 @@ async function askClaude(msgs) {
 }
 
 // Primero Gemini; si falla y hay clave de Claude, usa Claude.
-async function askAI(msgs) {
+async function askAI(msgs, extra) {
   const errors = [];
   if (cfg.geminiKey) {
-    try { return { text: await askGemini(msgs), by: 'Gemini' }; }
+    try { return { text: await askGemini(msgs, extra), by: 'Gemini' }; }
     catch (e) { errors.push(e.message); }
   }
   if (cfg.claudeKey) {
-    try { return { text: await askClaude(msgs), by: 'Claude (respaldo)' }; }
+    try { return { text: await askClaude(msgs, extra), by: 'Claude (respaldo)' }; }
     catch (e) { errors.push(e.message); }
   }
   if (!cfg.geminiKey && !cfg.claudeKey) throw new Error('No hay ninguna clave cargada. Abrí ⚙️ Ajustes.');
   throw new Error(errors.join(' | '));
+}
+
+/* ============ UTILIDADES ============ */
+const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const R = n => Math.round(n);
+function hace(iso) {
+  if (!iso) return '';
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  return `hace ${Math.round(h / 24)} d`;
+}
+
+/* ============ CLIMA, VIENTO, ALERTAS Y MAR (Open-Meteo + SMN) ============ */
+const WMO = { 0: 'despejado', 1: 'mayormente despejado', 2: 'parcialmente nublado', 3: 'nublado',
+  45: 'niebla', 48: 'niebla con escarcha', 51: 'llovizna leve', 53: 'llovizna', 55: 'llovizna intensa',
+  56: 'llovizna helada', 57: 'llovizna helada intensa', 61: 'lluvia leve', 63: 'lluvia', 65: 'lluvia fuerte',
+  66: 'lluvia helada', 67: 'lluvia helada fuerte', 71: 'nevada leve', 73: 'nevada', 75: 'nevada fuerte',
+  77: 'granizo fino', 80: 'chaparrones leves', 81: 'chaparrones', 82: 'chaparrones fuertes',
+  85: 'nevadas leves', 86: 'nevadas fuertes', 95: 'tormenta', 96: 'tormenta con granizo', 99: 'tormenta fuerte con granizo' };
+function wxIcon(c) {
+  if (c === 0) return '☀️'; if (c <= 2) return '🌤️'; if (c === 3) return '☁️'; if (c <= 48) return '🌫️';
+  if (c <= 67 || (c >= 80 && c <= 82)) return '🌧️'; if (c <= 86) return '❄️'; return '⛈️';
+}
+const DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+const DIR_TXT = { N: 'norte', NNE: 'nor-noreste', NE: 'noreste', ENE: 'este-noreste', E: 'este', ESE: 'este-sureste',
+  SE: 'sureste', SSE: 'sur-sureste', S: 'sur', SSO: 'sur-suroeste', SO: 'suroeste', OSO: 'oeste-suroeste',
+  O: 'oeste', ONO: 'oeste-noroeste', NO: 'noroeste', NNO: 'nor-noroeste' };
+const dirCode = deg => deg == null ? '' : DIRS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+const dirTxt = deg => DIR_TXT[dirCode(deg)] || '';
+function windLevel(gust) {
+  if (gust >= 90) return 'muy fuerte'; if (gust >= 60) return 'fuerte'; if (gust >= 40) return 'moderado'; return 'leve';
+}
+const fmt1 = v => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+const sgn = v => (v >= 0 ? '+' : '−') + fmt1(Math.abs(v));
+// Las horas de Open-Meteo vienen en hora local del lugar ("2026-11-02T14:00")
+function lt(s) {
+  const [d, t = '00:00'] = s.split('T');
+  const [y, m, dd] = d.split('-').map(Number); const [h, mi] = t.split(':').map(Number);
+  return new Date(y, m - 1, dd, h, mi);
+}
+const hhmm = dt => String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+function dayLabel(dt, long = false) {
+  const a = new Date(); a.setHours(0, 0, 0, 0);
+  const b = new Date(dt); b.setHours(0, 0, 0, 0);
+  const diff = Math.round((b - a) / 86400000);
+  if (diff === 0) return 'Hoy'; if (diff === 1) return 'Mañana';
+  const s = dt.toLocaleDateString('es-AR', { weekday: long ? 'long' : 'short' }).replace('.', '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/* --- Ubicación --- */
+let lastPlace = null;
+async function reverseName(lat, lon) {
+  if (lastPlace && Math.abs(lastPlace.lat - lat) < 0.05 && Math.abs(lastPlace.lon - lon) < 0.05) return lastPlace.name;
+  try {
+    const d = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=es`).then(r => r.json());
+    const name = d.city || d.locality || d.principalSubdivision || 'tu zona';
+    lastPlace = { lat, lon, name }; return name;
+  } catch (e) { return 'tu zona'; }
+}
+async function geocodeCity(q) {
+  const [name, ...rest] = q.split(',').map(s => s.trim());
+  const hint = norm(rest.join(' '));
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=10&language=es&format=json`).then(r => r.json());
+  const list = r.results || [];
+  if (!list.length) throw new Error(`No encontré la ciudad "${q}". Revisala en ⚙️ Ajustes.`);
+  const region = ((navigator.language || '').split('-')[1] || '').toUpperCase();
+  const g = (hint && list.find(x => norm(`${x.country} ${x.admin1} ${x.admin2}`).includes(hint)))
+    || list.find(x => x.country_code === region) || list[0];
+  return { q, lat: g.latitude, lon: g.longitude, name: g.name + (g.admin1 ? ', ' + g.admin1 : '') };
+}
+async function getLocation() {
+  if (cfg.useGPS && navigator.geolocation) {
+    try {
+      const pos = await new Promise((ok, ko) => navigator.geolocation.getCurrentPosition(ok, ko,
+        { timeout: 10000, maximumAge: 30 * 60000, enableHighAccuracy: false }));
+      const lat = pos.coords.latitude, lon = pos.coords.longitude;
+      return { lat, lon, name: await reverseName(lat, lon) };
+    } catch (e) {
+      if (!cfg.city) throw new Error('No pude obtener tu ubicación. Permití la ubicación para esta app o cargá tu ciudad en ⚙️ Ajustes.');
+    }
+  }
+  if (!cfg.city) throw new Error('Cargá tu ciudad en ⚙️ Ajustes, o activá "Usar mi ubicación".');
+  if (!cfg.cityGeo || cfg.cityGeo.q !== cfg.city) { cfg.cityGeo = await geocodeCity(cfg.city); store('cfg', cfg); }
+  return cfg.cityGeo;
+}
+
+/* --- Descarga de datos (se guardan 15 minutos para no repetir pedidos) --- */
+let wxCache = null;
+async function fetchMarine(lat, lon) {
+  const base = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}` +
+    '&hourly=wave_height,wave_direction,wave_period,sea_surface_temperature,sea_level_height_msl' +
+    '&daily=wave_height_max&timezone=auto&forecast_days=4&cell_selection=sea';
+  for (const url of [base + '&minutely_15=sea_level_height_msl', base]) {
+    try { const r = await fetch(url); if (r.ok) return await r.json(); } catch (e) { /* siguiente intento */ }
+  }
+  return null;
+}
+async function getWxData() {
+  if (wxCache && Date.now() - wxCache.t < 15 * 60000) return wxCache;
+  const loc = await getLocation();
+  const fUrl = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
+    '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m' +
+    '&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset,uv_index_max' +
+    '&timezone=auto&forecast_days=4&wind_speed_unit=kmh';
+  const [f, m, al] = await Promise.all([
+    fetch(fUrl).then(r => { if (!r.ok) throw new Error(`No pude obtener el pronóstico (error ${r.status}).`); return r.json(); }),
+    fetchMarine(loc.lat, loc.lon),
+    loadAlerts()
+  ]);
+  wxCache = { t: Date.now(), loc, f, m, al };
+  return wxCache;
+}
+// Índice de la hora actual dentro del pronóstico horario
+function nowIndex(times) {
+  const now = Date.now(); let best = 0;
+  times.forEach((t, i) => { if (lt(t).getTime() <= now) best = i; });
+  return best;
+}
+
+/* --- Alertas: oficiales (SMN, vía GitHub) + propias (calculadas del pronóstico) --- */
+async function loadAlerts() {
+  try {
+    const data = await fetchJsonFrom('alertas.json');
+    if (!data.ok) return { ok: false, list: [] };
+    const zones = (cfg.alertZone || '').split(',').map(z => norm(z.trim())).filter(Boolean);
+    const now = Date.now();
+    const list = (data.alertas || []).filter(a => {
+      if (a.hasta && new Date(a.hasta).getTime() < now) return false;
+      if (!zones.length) return false;
+      const s = norm([a.areas, a.titulo, a.descripcion].join(' '));
+      return zones.some(z => s.includes(z));
+    });
+    return { ok: true, list, actualizado: data.actualizado };
+  } catch (e) { return { ok: false, list: [] }; }
+}
+function alertColor(a) {
+  const s = norm([a.titulo, a.evento, a.nivel, a.descripcion].join(' '));
+  if (/roj/.test(s) || a.severidad === 'Extreme') return 'roja';
+  if (/naranja/.test(s) || a.severidad === 'Severe') return 'naranja';
+  return 'amarilla';
+}
+function ownAlerts(f) {
+  const h = f.hourly, i0 = nowIndex(h.time), end = Math.min(h.time.length, i0 + 48);
+  const out = [];
+  let gi = -1, gmax = 0;
+  for (let i = i0; i < end; i++) if ((h.wind_gusts_10m[i] ?? 0) > gmax) { gmax = h.wind_gusts_10m[i]; gi = i; }
+  if (gmax >= 60) {
+    const t = lt(h.time[gi]);
+    out.push({ icon: '💨', level: gmax >= 90 ? 'naranja' : 'amarilla',
+      text: `Ráfagas ${windLevel(gmax)}s de hasta ${R(gmax)} km/h del ${dirTxt(h.wind_direction_10m[gi])}, ${dayLabel(t).toLowerCase()} a las ${hhmm(t)}.` });
+  }
+  let pi = -1, pmax = 0;
+  for (let i = i0; i < Math.min(h.time.length, i0 + 24); i++) if ((h.precipitation_probability[i] ?? 0) > pmax) { pmax = h.precipitation_probability[i]; pi = i; }
+  if (pmax >= 70) {
+    const t = lt(h.time[pi]);
+    out.push({ icon: '🌧️', level: 'info', text: `Probable lluvia (${pmax}%) ${dayLabel(t).toLowerCase()} cerca de las ${hhmm(t)}.` });
+  }
+  let tmin = Infinity, ti = -1;
+  for (let i = i0; i < end; i++) if (h.temperature_2m[i] < tmin) { tmin = h.temperature_2m[i]; ti = i; }
+  if (tmin <= 0) {
+    const t = lt(h.time[ti]);
+    out.push({ icon: '🥶', level: 'info', text: `Posible helada: ${R(tmin)}° ${dayLabel(t).toLowerCase()} a las ${hhmm(t)}.` });
+  }
+  return out;
+}
+function alertsHtml(d) {
+  let html = '';
+  d.al.list.forEach(a => {
+    const c = alertColor(a);
+    html += `<div class="alert ${c}"><b>⚠️ ${escapeHtml(a.titulo || a.evento || 'Alerta')}</b> · SMN` +
+      (a.hasta ? `<br><small>Hasta ${escapeHtml(dayLabel(new Date(a.hasta)).toLowerCase())} ${hhmm(new Date(a.hasta))}</small>` : '') + '</div>';
+  });
+  ownAlerts(d.f).forEach(a => { html += `<div class="alert ${a.level}">${a.icon} ${escapeHtml(a.text)}</div>`; });
+  return html;
+}
+function alertsSpeech(d) {
+  const parts = d.al.list.map(a => `Atención: el Servicio Meteorológico tiene vigente ${a.titulo || a.evento}.`);
+  ownAlerts(d.f).forEach(a => parts.push(a.text));
+  return parts.join(' ');
+}
+
+/* --- Tarjeta de clima --- */
+async function buildWeather() {
+  const d = await getWxData();
+  const { f, loc } = d, c = f.current, dl = f.daily, h = f.hourly;
+  const descNow = WMO[c.weather_code] || 'condición desconocida';
+  const rain = i => dl.precipitation_probability_max?.[i] ?? null;
+
+  // Próximas horas (cada 3 h)
+  const i0 = nowIndex(h.time);
+  let hours = '';
+  for (let i = i0 + 3; i <= Math.min(h.time.length - 1, i0 + 15); i += 3) {
+    hours += `<span>${hhmm(lt(h.time[i]))}</span><span>${wxIcon(h.weather_code[i])} ${R(h.temperature_2m[i])}°</span>` +
+      `<span>💨 ${dirCode(h.wind_direction_10m[i])} ${R(h.wind_speed_10m[i])}</span><span class="rain">ráf. ${R(h.wind_gusts_10m[i])}</span>`;
+  }
+  // Próximos días
+  let days = '';
+  for (let i = 0; i < dl.time.length; i++) {
+    days += `<span>${dayLabel(lt(dl.time[i]))}</span><span>${wxIcon(dl.weather_code[i])}</span>` +
+      `<span>${R(dl.temperature_2m_min[i])}° / <b>${R(dl.temperature_2m_max[i])}°</b></span>` +
+      `<span class="rain">${rain(i) != null ? '💧' + rain(i) + '%' : ''}</span>` +
+      `<span>💨 ${dirCode(dl.wind_direction_10m_dominant[i])} ${R(dl.wind_gusts_10m_max[i])}</span>`;
+  }
+  const tips = [];
+  if ((rain(0) ?? 0) >= 50) tips.push('☂️ Llevá paraguas hoy.');
+  else if ((rain(1) ?? 0) >= 50) tips.push('☂️ Mañana probablemente llueva.');
+  if (dl.wind_gusts_10m_max[0] >= 60) tips.push('🧢 Asegurá objetos sueltos y cuidado al manejar: hay ráfagas fuertes.');
+  if (dl.temperature_2m_min[0] <= 8) tips.push('🧥 Abrigate, la mínima es baja.');
+  if (dl.temperature_2m_max[0] >= 32) tips.push('🥵 Mucho calor: hidratate.');
+  if ((dl.uv_index_max?.[0] ?? 0) >= 8) tips.push('🧴 UV muy alto: usá protector solar.');
+
+  const html = `<h4>☀️ Clima en ${escapeHtml(loc.name)}</h4>
+    ${alertsHtml(d)}
+    <div class="wx-now"><span class="big">${wxIcon(c.weather_code)}</span>
+      <div><div class="temp">${R(c.temperature_2m)}°C</div>
+      <div class="desc">${descNow} · sensación ${R(c.apparent_temperature)}° · humedad ${R(c.relative_humidity_2m)}%</div></div></div>
+    <div class="wind">💨 Viento del <b>${dirTxt(c.wind_direction_10m)}</b> ${R(c.wind_speed_10m)} km/h · ráfagas <b>${R(c.wind_gusts_10m)} km/h</b> (${windLevel(c.wind_gusts_10m)})</div>
+    <div class="sub">Próximas horas (viento y ráfagas en km/h)</div>
+    <div class="wx-grid g4">${hours}</div>
+    <div class="sub">Próximos días (ráfaga máxima)</div>
+    <div class="wx-grid g5">${days}</div>
+    <div class="desc" style="margin-top:8px">🌅 Sale el sol ${hhmm(lt(dl.sunrise[0]))} · 🌇 se pone ${hhmm(lt(dl.sunset[0]))}` +
+    (dl.uv_index_max ? ` · UV ${R(dl.uv_index_max[0])}` : '') + `</div>
+    ${tips.length ? `<div class="advice">${tips.join('<br>')}</div>` : ''}
+    ${!d.al.ok ? '<div class="upd">No pude consultar las alertas oficiales del SMN.</div>' : ''}`;
+
+  let speech = `En ${loc.name} ahora hay ${R(c.temperature_2m)} grados, ${descNow}, sensación térmica de ${R(c.apparent_temperature)}. ` +
+    `Viento del ${dirTxt(c.wind_direction_10m)} a ${R(c.wind_speed_10m)} kilómetros por hora, con ráfagas de ${R(c.wind_gusts_10m)}. ` +
+    alertsSpeech(d) + ' ' +
+    `Hoy, máxima de ${R(dl.temperature_2m_max[0])} y mínima de ${R(dl.temperature_2m_min[0])}, ráfagas de hasta ${R(dl.wind_gusts_10m_max[0])}` +
+    (rain(0) != null ? `, y ${rain(0)} por ciento de probabilidad de lluvia. ` : '. ') +
+    `Mañana, ${WMO[dl.weather_code[1]] || ''}, entre ${R(dl.temperature_2m_min[1])} y ${R(dl.temperature_2m_max[1])} grados, ráfagas de hasta ${R(dl.wind_gusts_10m_max[1])} del ${dirTxt(dl.wind_direction_10m_dominant[1])}.`;
+  if (tips.length) speech += ' ' + tips.map(t => t.replace(/^\S+\s/, '')).join(' ');
+  return { html, speech: speech.replace(/\s+/g, ' '), text: speech.replace(/\s+/g, ' ') };
+}
+
+/* --- Mareas (estimadas por modelo), olas, sol y luna --- */
+function tides(m) {
+  if (!m) return null;
+  let times, vals;
+  const q = m.minutely_15, hr = m.hourly;
+  if (q && q.sea_level_height_msl && q.sea_level_height_msl.some(v => v != null)) { times = q.time; vals = q.sea_level_height_msl; }
+  else if (hr && hr.sea_level_height_msl && hr.sea_level_height_msl.some(v => v != null)) { times = hr.time; vals = hr.sea_level_height_msl; }
+  else return null;
+  const pts = times.map((t, i) => ({ t: lt(t).getTime(), v: vals[i] })).filter(p => p.v != null);
+  if (pts.length < 5) return null;
+  const step = pts[1].t - pts[0].t;
+  let ev = [];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1].v, b = pts[i].v, c = pts[i + 1].v;
+    const high = b >= a && b > c, low = b <= a && b < c;
+    if (!high && !low) continue;
+    const den = a - 2 * b + c;
+    const off = den !== 0 ? 0.5 * (a - c) / den : 0;           // ajuste fino entre puntos
+    ev.push({ type: high ? 'Pleamar' : 'Bajamar', time: new Date(pts[i].t + off * step), h: b - 0.25 * (a - c) * off });
+  }
+  // Limpieza: alternar pleamar/bajamar y descartar oscilaciones mínimas
+  const clean = [];
+  ev.forEach(e => {
+    const last = clean[clean.length - 1];
+    if (last && last.type === e.type) {
+      if ((e.type === 'Pleamar' && e.h > last.h) || (e.type === 'Bajamar' && e.h < last.h)) clean[clean.length - 1] = e;
+    } else if (last && Math.abs(e.h - last.h) < 0.15) {
+      clean.pop();
+    } else clean.push(e);
+  });
+  const now = Date.now();
+  let k = 0; while (k < pts.length - 1 && pts[k + 1].t <= now) k++;
+  const rising = pts[Math.min(k + 1, pts.length - 1)].v > pts[k].v;
+  return { events: clean, rising, level: pts[k].v };
+}
+function moon() {
+  const syn = 29.530588853, ref = Date.UTC(2000, 0, 6, 18, 14);
+  const age = (((Date.now() - ref) / 86400000) % syn + syn) % syn;
+  const names = [[1.85, '🌑 luna nueva'], [5.54, '🌒 luna creciente'], [9.23, '🌓 cuarto creciente'], [12.92, '🌔 gibosa creciente'],
+    [16.61, '🌕 luna llena'], [20.3, '🌖 gibosa menguante'], [23.99, '🌗 cuarto menguante'], [27.68, '🌘 luna menguante'], [99, '🌑 luna nueva']];
+  const name = names.find(n => age < n[0])[1];
+  const vivas = age < 2.5 || age > syn - 2.5 || Math.abs(age - syn / 2) < 2.5;
+  return { name, vivas };
+}
+function tideLink() {
+  return cfg.tideLink ? `<a href="${escapeHtml(cfg.tideLink)}" target="_blank" rel="noopener">abrir tabla de mareas</a>` : '';
+}
+async function buildSea() {
+  const d = await getWxData();
+  const { m, f, loc } = d;
+  if (!m || !m.hourly) throw new Error('No hay datos de mar para esta ubicación.');
+  const hr = m.hourly, i = nowIndex(hr.time);
+  const tw = tides(m), mo = moon(), dl = f.daily;
+  const now = Date.now();
+  const next = tw ? tw.events.filter(e => e.time.getTime() > now).slice(0, 4) : [];
+
+  let html = `<h4>🌊 El mar en ${escapeHtml(loc.name)}</h4>`;
+  if (tw) {
+    html += `<div class="wind">Marea <b>${tw.rising ? 'subiendo ⬆️' : 'bajando ⬇️'}</b> ahora</div><div class="wx-grid g3">` +
+      next.map(e => `<span>${e.type === 'Pleamar' ? '🔼' : '🔽'} ${e.type}</span><span>${dayLabel(e.time)} ${hhmm(e.time)}</span><span class="rain">${sgn(e.h)} m</span>`).join('') +
+      '</div>';
+  } else html += '<div class="desc">No hay datos de marea para este punto.</div>';
+  const wh = hr.wave_height?.[i], wp = hr.wave_period?.[i], wd = hr.wave_direction?.[i], sst = hr.sea_surface_temperature?.[i];
+  html += '<div class="sep"></div>';
+  if (wh != null) html += `<div>🌊 Olas: <b>${fmt1(wh)} m</b>${wp != null ? ` · período ${R(wp)} s` : ''}${wd != null ? ` · del ${dirTxt(wd)}` : ''}` +
+    (m.daily?.wave_height_max ? ` · máx. hoy ${fmt1(m.daily.wave_height_max[0])} m` : '') + '</div>';
+  if (sst != null) html += `<div>🌡️ Temperatura del agua: <b>${R(sst)}°C</b></div>`;
+  html += `<div>💨 Viento: del ${dirTxt(f.current.wind_direction_10m)} ${R(f.current.wind_speed_10m)} km/h, ráfagas ${R(f.current.wind_gusts_10m)} km/h</div>`;
+  html += `<div>🌅 Sale el sol ${hhmm(lt(dl.sunrise[0]))} · 🌇 se pone ${hhmm(lt(dl.sunset[0]))}</div>`;
+  html += `<div>${mo.name}${mo.vivas ? ' · <b>mareas vivas</b> (mayor diferencia entre pleamar y bajamar)' : ''}</div>`;
+  html += `<div class="upd">Mareas estimadas por modelo (Open-Meteo), en metros respecto al nivel medio del mar: los horarios sirven de guía, ` +
+    `las alturas no coinciden con las tablas oficiales. Para pesca o navegación verificá en la tabla oficial. ${tideLink()}</div>`;
+
+  let speech = `En el mar, la marea está ${tw ? (tw.rising ? 'subiendo' : 'bajando') : 'sin datos'}. `;
+  if (next.length) speech += next.slice(0, 2).map(e => `${e.type} ${dayLabel(e.time).toLowerCase()} a las ${hhmm(e.time)}`).join(', y ') + '. ';
+  if (wh != null) speech += `Olas de ${fmt1(wh)} metros${wd != null ? ' del ' + dirTxt(wd) : ''}. `;
+  if (sst != null) speech += `El agua está a ${R(sst)} grados. `;
+  speech += `Viento del ${dirTxt(f.current.wind_direction_10m)} con ráfagas de ${R(f.current.wind_gusts_10m)}. `;
+  speech += `El sol se pone a las ${hhmm(lt(dl.sunset[0]))}. Hay ${mo.name.replace(/^\S+\s/, '')}${mo.vivas ? ', con mareas vivas' : ''}.`;
+  return { html, speech, text: speech };
+}
+function tideLine(d) {
+  const tw = tides(d.m); if (!tw) return null;
+  const next = tw.events.filter(e => e.time.getTime() > Date.now()).slice(0, 2);
+  if (!next.length) return null;
+  return 'Próximas mareas: ' + next.map(e => `${e.type} ${dayLabel(e.time).toLowerCase()} ${hhmm(e.time)}`).join(' · ');
+}
+
+/* --- Datos en texto para que la IA responda preguntas puntuales --- */
+function wxContext(d) {
+  const { f, m, loc } = d, h = f.hourly, dl = f.daily, c = f.current;
+  const L = [];
+  const now = new Date();
+  L.push(`Ubicación: ${loc.name}. Fecha y hora actual: ${dayLabel(now, true)} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${hhmm(now)} (formato 24 h).`);
+  L.push(`Ahora: ${R(c.temperature_2m)}°C, ${WMO[c.weather_code] || ''}, sensación ${R(c.apparent_temperature)}°, viento del ${dirTxt(c.wind_direction_10m)} ${R(c.wind_speed_10m)} km/h con ráfagas de ${R(c.wind_gusts_10m)} km/h.`);
+  if (!d.al.ok) L.push('Alertas oficiales SMN: no se pudieron consultar.');
+  else if (!d.al.list.length) L.push('Alertas oficiales SMN para la zona: ninguna vigente.');
+  else d.al.list.forEach(a => L.push(`ALERTA OFICIAL SMN: ${a.titulo || a.evento}${a.hasta ? ' hasta ' + dayLabel(new Date(a.hasta)).toLowerCase() + ' ' + hhmm(new Date(a.hasta)) : ''}. ${a.descripcion || ''}`));
+  ownAlerts(f).forEach(a => L.push('Aviso calculado del pronóstico: ' + a.text));
+
+  const mh = m && m.hourly ? m.hourly : null;
+  const mIdx = {}; if (mh) mh.time.forEach((t, i) => mIdx[t] = i);
+  L.push('Pronóstico por hora (hora local): temperatura, cielo, prob. lluvia, viento dirección/velocidad/ráfagas, olas, nivel del mar:');
+  const i0 = nowIndex(h.time);
+  for (let i = i0; i < h.time.length; i += (i - i0 < 48 ? 1 : 3)) {
+    const t = lt(h.time[i]), j = mIdx[h.time[i]];
+    let s = `${dayLabel(t)} ${t.getDate()}/${t.getMonth() + 1} ${hhmm(t)}: ${R(h.temperature_2m[i])}°, ${WMO[h.weather_code[i]] || ''}, lluvia ${h.precipitation_probability[i] ?? '?'}%, ` +
+      `viento ${dirCode(h.wind_direction_10m[i])} ${R(h.wind_speed_10m[i])} km/h ráf ${R(h.wind_gusts_10m[i])}`;
+    if (j != null) {
+      if (mh.wave_height?.[j] != null) s += `, olas ${fmt1(mh.wave_height[j])} m ${dirCode(mh.wave_direction?.[j])} ${R(mh.wave_period?.[j] ?? 0)}s`;
+      if (mh.sea_level_height_msl?.[j] != null) s += `, nivel mar ${sgn(mh.sea_level_height_msl[j])} m`;
+    }
+    L.push(s);
+  }
+  L.push('Por día:');
+  dl.time.forEach((t, i) => L.push(`${dayLabel(lt(t))} ${t}: ${WMO[dl.weather_code[i]] || ''}, ${R(dl.temperature_2m_min[i])}° a ${R(dl.temperature_2m_max[i])}°, lluvia ${dl.precipitation_probability_max?.[i] ?? '?'}%, ` +
+    `ráfaga máx ${R(dl.wind_gusts_10m_max[i])} km/h del ${dirTxt(dl.wind_direction_10m_dominant[i])}, sale el sol ${hhmm(lt(dl.sunrise[i]))}, se pone ${hhmm(lt(dl.sunset[i]))}` +
+    (m?.daily?.wave_height_max?.[i] != null ? `, ola máx ${fmt1(m.daily.wave_height_max[i])} m` : '')));
+  const tw = tides(m);
+  if (tw) {
+    L.push(`Mareas estimadas por modelo (altura respecto al nivel medio; horarios aproximados). Ahora la marea está ${tw.rising ? 'subiendo' : 'bajando'}:`);
+    tw.events.forEach(e => L.push(`${e.type} ${dayLabel(e.time)} ${e.time.getDate()}/${e.time.getMonth() + 1} ${hhmm(e.time)} (${sgn(e.h)} m)`));
+  }
+  const mo = moon(); L.push(`Luna: ${mo.name.replace(/^\S+\s/, '')}${mo.vivas ? ' (mareas vivas)' : ''}.`);
+  return L.join('\n');
+}
+const WX_RULES = 'Abajo tenés DATOS METEOROLÓGICOS Y MARINOS REALES (Open-Meteo y SMN). Respondé la pregunta usando solo esos datos. ' +
+  'Si pregunta por un día u hora, usá la fila más cercana. Mencioná el viento (dirección y ráfagas) cuando sea relevante, y cualquier alerta vigente. ' +
+  'Las mareas son estimadas por modelo: dá los horarios como aproximados y, si es para pesca o navegación, sugerí verificar en una tabla oficial. ' +
+  'No inventes datos que no estén. Sé breve: 2 a 4 oraciones.';
+
+async function weatherReply() { return { ...(await buildWeather()), by: 'Clima · Open-Meteo (sin IA)' }; }
+async function seaReply() { return { ...(await buildSea()), by: 'Mar · Open-Meteo (sin IA)' }; }
+// Pregunta puntuada ("¿cómo va a estar el mar mañana a las 16?"): IA + datos reales
+async function weatherAI(isSea) {
+  const d = await getWxData();
+  try {
+    const r = await askAI(history.slice(-MAX_HISTORY), WX_RULES + '\n\n' + wxContext(d));
+    return { text: r.text, by: r.by + ' + datos Open-Meteo' };
+  } catch (e) {
+    return isSea ? seaReply() : weatherReply();   // sin IA disponible: muestra la tarjeta
+  }
+}
+
+/* ============ NOTICIAS (archivo noticias.json que arma GitHub Actions) ============ */
+// Archivos que actualiza GitHub (noticias.json, alertas.json): se leen directo del repositorio para tener lo último
+function dataUrls(file) {
+  const urls = [];
+  const h = location.hostname;
+  if (h.endsWith('.github.io')) {
+    const user = h.split('.')[0];
+    const repo = location.pathname.split('/').filter(Boolean)[0];
+    if (repo && !repo.includes('.')) urls.push(`https://raw.githubusercontent.com/${user}/${repo}/main/${file}`);
+  }
+  urls.push(file);
+  return urls;
+}
+async function fetchJsonFrom(file, valid = () => true) {
+  let lastErr = new Error('sin datos');
+  for (const u of dataUrls(file)) {
+    try {
+      const res = await fetch(u + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (valid(data)) return data;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+async function loadNews() {
+  try { return await fetchJsonFrom('noticias.json', d => d.items && d.items.length); }
+  catch (e) { throw new Error('Todavía no hay noticias cargadas. Revisá en GitHub → Actions que "Actualizar noticias" haya corrido bien.'); }
+}
+// Alterna fuentes para que no domine un solo medio
+function diverse(items, n) {
+  const bySrc = {};
+  items.forEach(it => (bySrc[it.fuente] = bySrc[it.fuente] || []).push(it));
+  const queues = Object.values(bySrc), out = [];
+  while (out.length < n && queues.some(q => q.length)) queues.forEach(q => { if (q.length && out.length < n) out.push(q.shift()); });
+  return out;
+}
+const NOT_TOPIC = /^(hoy|ahora|la argentina|argentina|el pais|pais|el mundo|mundo|ultimo momento|internacionales?|nacionales?|locales?|del dia)$/;
+async function buildNews(t, max = 8, original = '') {
+  const data = await loadNews();
+  let items = data.items;
+  let scope = 'todas';
+  if (/argentin|nacional|\bpais\b|local/.test(t)) { scope = 'Argentina'; items = items.filter(i => i.region === 'ar'); }
+  else if (/mundo|internacional|exterior/.test(t)) { scope = 'Mundo'; items = items.filter(i => i.region === 'mundo'); }
+
+  let topic = null, note = '';
+  const m = t.match(/(?:noticias?|titulares|novedades)\s+(?:de|sobre|del|acerca de|de la|de los)\s+(.+?)[?.!]*$/);
+  if (m && !NOT_TOPIC.test(m[1].trim())) {
+    const shown = (original || '').match(/(?:de|sobre|del|acerca de|de la|de los)\s+(.+?)[?.!]*$/i);
+    topic = shown ? shown[1].trim() : m[1].trim();
+    const words = m[1].trim().split(/\s+/).filter(w => w.length >= 4);
+    const hits = items.filter(i => { const s = norm(i.titulo + ' ' + (i.resumen || '')); return words.some(w => s.includes(w)); });
+    if (hits.length) items = hits;
+    else note = `No encontré titulares recientes sobre "${topic}". Te paso los generales. `;
+  }
+  const pick = topic && !note ? items.slice(0, max) : diverse(items, max);
+  if (!pick.length) throw new Error('No hay titulares para esa búsqueda.');
+
+  const title = topic && !note ? `📰 Noticias sobre ${escapeHtml(topic)}` : `📰 Últimas noticias${scope !== 'todas' ? ' · ' + scope : ''}`;
+  const li = pick.map(i => `<li><a href="${escapeHtml(i.link)}" target="_blank" rel="noopener">${escapeHtml(i.titulo)}</a>` +
+    `<span class="src">${escapeHtml(i.fuente)}${i.fecha ? ' · ' + hace(i.fecha) : ''}</span></li>`).join('');
+  const html = `<div class="news"><h4>${title}</h4>${note ? `<div class="desc">${escapeHtml(note)}</div>` : ''}<ol>${li}</ol>` +
+    `<div class="upd">Actualizado ${hace(data.actualizado)} · tocá un titular para leerlo</div></div>`;
+  const top = pick.slice(0, 5);
+  const speech = note + 'Estos son los últimos titulares. ' + top.map(i => `De ${i.fuente}: ${i.titulo}.`).join(' ');
+  const text = 'Titulares: ' + pick.map((i, k) => `${k + 1}) ${i.titulo} (${i.fuente})`).join(' ');
+  return { html, speech, text };
+}
+async function newsReply(t, original) {
+  const n = await buildNews(t, 8, original);
+  return { ...n, by: 'Noticias (sin IA)' };
+}
+
+/* ============ MI DÍA ============ */
+async function myDay() {
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'Buen día' : h < 20 ? 'Buenas tardes' : 'Buenas noches';
+  const fecha = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const head = `${saludo}${cfg.userName ? ', ' + cfg.userName : ''}. Hoy es ${fecha}.`;
+  let html = `<h4>🌅 ${escapeHtml(head)}</h4>`, speech = head + ' ';
+  try {
+    const w = await buildWeather(); html += '<div class="sep"></div>' + w.html; speech += w.speech + ' ';
+    const tl = tideLine(await getWxData());
+    if (tl) { html += `<div class="wind">🌊 ${escapeHtml(tl)}</div>`; speech += tl + '. '; }
+  }
+  catch (e) { html += `<div class="sep"></div><div class="desc">☀️ ${escapeHtml(e.message)}</div>`; }
+  try { const n = await buildNews('', 5); html += '<div class="sep"></div>' + n.html; speech += n.speech; }
+  catch (e) { html += `<div class="sep"></div><div class="desc">📰 ${escapeHtml(e.message)}</div>`; }
+  html += '<div class="sep"></div><div class="desc">📅 Tu agenda va a aparecer acá cuando sumemos esa función.</div>';
+  return { html, speech, text: speech, by: 'Mi día (sin IA)' };
+}
+
+/* ============ ¿LO RESUELVE LA APP SIN IA? ============ */
+async function routeLocal(text) {
+  const t = norm(text);
+  if (/(mi dia|resumen del dia|como viene (el|mi) dia)/.test(t)) return myDay();
+  if (/(noticia|titulares|ultimo momento|que esta pasando|novedades)/.test(t)) return newsReply(t, text);
+  const q = t.replace(/[¿?¡!.,]/g, '').trim();
+  // Pedido simple → tarjeta completa, sin IA
+  if (/^(el )?(clima|pronostico|tiempo|viento|alertas?)( de hoy| hoy| ahora)?$/.test(q) ||
+      /^(como esta|que tal) (el )?(clima|tiempo|viento)( hoy| ahora)?$/.test(q)) return weatherReply();
+  if (/^(el )?(mar|mareas?|olas|oleaje|tabla de mareas)( de hoy| hoy| ahora)?$/.test(q) ||
+      /^(como esta|que tal) (el )?(mar|marea)( hoy| ahora)?$/.test(q)) return seaReply();
+  // Pregunta puntual sobre tiempo o mar → la IA responde con los datos reales
+  const isSea = /(marea|pleamar|bajamar|\bmar\b|\bolas?\b|oleaje|playa|costa|pesca|pescar|kayak|navegar|amanecer|atardecer|sale el sol|se pone el sol|salida del sol|puesta del sol|\bluna\b)/.test(q);
+  const isWx = /(clima|pronostico|llov|llueve|lluvia|paraguas|viento|rafaga|alerta|tormenta|nieve|nevar|helada|frio|calor|temperatura|grados|el tiempo|que tiempo|abrig|soleado|nublado|granizo)/.test(q);
+  if (isSea || isWx) return weatherAI(isSea);
+  return null;
 }
 
 /* ============ CHAT ============ */
@@ -269,6 +822,18 @@ function addMsg(kind, text, tag) {
   chat.scrollTop = chat.scrollHeight;
   return div;
 }
+function addCard(html, speechText, tag) {
+  const w = $('welcome'); if (w) w.remove();
+  const div = document.createElement('div');
+  div.className = 'msg bot card';
+  div.innerHTML = html;
+  if (tag) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = tag; div.appendChild(t); }
+  const b = document.createElement('button'); b.className = 'speak'; b.textContent = '🔈 Escuchar';
+  b.onclick = () => speak(speechText); div.appendChild(b);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
 function renderHistory() {
   history.forEach(m => addMsg(m.role === 'user' ? 'me' : 'bot', m.content, m.by));
 }
@@ -288,14 +853,18 @@ async function send(text) {
   subtitle.textContent = 'Pensando…';
 
   try {
-    const { text: answer, by } = await askAI(history.slice(-MAX_HISTORY));
+    // 1) ¿Lo resuelve la app sola? (clima, noticias, mi día) → no gasta IA
+    let r = await routeLocal(text);
+    // 2) Si no, le pregunta a la IA (Gemini → Claude)
+    if (!r) r = await askAI(history.slice(-MAX_HISTORY));
     typing.remove();
-    addMsg('bot', answer, by);
-    history.push({ role: 'assistant', content: answer, by });
+    if (r.html) addCard(r.html, r.speech || r.text, r.by);
+    else addMsg('bot', r.text, r.by);
+    history.push({ role: 'assistant', content: r.text, by: r.by });
     history = history.slice(-40);
     store('history', history);
-    subtitle.textContent = 'Respondió ' + by;
-    if (cfg.autoSpeak) speak(answer);
+    subtitle.textContent = 'Respondió ' + r.by;
+    if (cfg.autoSpeak) speak(r.speech || r.text);
   } catch (e) {
     typing.remove();
     history.pop(); // no guardar la pregunta sin respuesta
@@ -385,6 +954,7 @@ function stopListening() { if (rec) rec.stop(); }
 mic.onclick = () => listening ? stopListening() : startListening();
 $('send').onclick = () => send(txt.value);
 txt.addEventListener('keydown', e => { if (e.key === 'Enter') send(txt.value); });
+document.querySelectorAll('#quick .chip').forEach(b => b.onclick = () => send(b.dataset.q));
 
 /* ============ BOTÓN SILENCIO ============ */
 function paintMute() { $('btnMute').textContent = cfg.autoSpeak ? '🔊' : '🔇'; }
@@ -396,6 +966,8 @@ function openSettings() {
   $('claudeKey').value = cfg.claudeKey; $('claudeModel').value = cfg.claudeModel;
   $('userName').value = cfg.userName; $('voiceSel').value = cfg.voiceName;
   $('autoSpeak').checked = cfg.autoSpeak; $('autoSend').checked = cfg.autoSend;
+  $('useGPS').checked = cfg.useGPS; $('city').value = cfg.city;
+  $('alertZone').value = cfg.alertZone; $('tideLink').value = cfg.tideLink;
   $('testStatus').textContent = '';
   $('settings').classList.add('open');
 }
@@ -404,7 +976,9 @@ function readForm() {
     geminiKey: $('geminiKey').value.trim(), geminiModel: $('geminiModel').value.trim() || DEFAULTS.geminiModel,
     claudeKey: $('claudeKey').value.trim(), claudeModel: $('claudeModel').value.trim() || DEFAULTS.claudeModel,
     userName: $('userName').value.trim(), voiceName: $('voiceSel').value,
-    autoSpeak: $('autoSpeak').checked, autoSend: $('autoSend').checked
+    autoSpeak: $('autoSpeak').checked, autoSend: $('autoSend').checked,
+    useGPS: $('useGPS').checked, city: $('city').value.trim(),
+    alertZone: $('alertZone').value.trim(), tideLink: $('tideLink').value.trim()
   };
 }
 $('btnSettings').onclick = openSettings;

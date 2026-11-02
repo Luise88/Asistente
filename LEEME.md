@@ -1,41 +1,30 @@
-# Asistente Personal — Etapa 1
+# Asistente Personal — Etapas 1 y 2
 
 App instalable (PWA) para Android: escucha tu voz, consulta a Gemini (y a Claude como respaldo) y responde hablando.
 
 ## Archivos
 - index.html — la app completa
-- manifest.json — datos para instalarla como app (nombre, ícono, colores)
-- sw.js — permite instalarla y abrirla rápido
-- icon-*.png — íconos
+- manifest.json, sw.js, icon-*.png — instalación como app
+- noticias.py — junta titulares de medios (GitHub lo corre cada 30 min)
+- alertas.py — lee las alertas oficiales del SMN (corre junto con las noticias)
+- noticias.json, alertas.json — datos guardados (se actualizan solos)
+- .github/workflows/noticias.yml — tarea programada de GitHub (crearla a mano)
 
-## Paso 1: Clave gratuita de Gemini
-1. Entrá a https://aistudio.google.com con tu cuenta de Google.
-2. Tocá "Get API key" → "Create API key".
-3. Copiala (empieza con AQ. o AIza). Guardala, la cargás en el paso 4.
+## Usar
+- Botones: 🌅 Mi día · ☀️ Clima · 🌊 Mar · 📰 Noticias · 🇦🇷 Argentina · 🌍 Mundo
+- Pedido simple ("clima", "mar", "viento") → tarjeta completa, sin IA.
+- Pregunta puntual ("¿va a haber viento a la tarde?", "¿cómo va a estar el mar mañana a las 16?")
+  → Gemini responde usando los datos reales de pronóstico, mar y alertas.
+- Cualquier otra cosa la responde la IA.
 
-## Paso 2: Publicar en GitHub Pages
-1. En GitHub: "New repository" → nombre: asistente → Public → Create.
-2. "Add file" → "Upload files" → arrastrá TODOS los archivos de esta carpeta (sin la carpeta). Commit.
-3. Settings → Pages → Source: "Deploy from a branch" → Branch: main / (root) → Save.
-4. En 1–2 minutos queda en: https://TU-USUARIO.github.io/asistente/
+## Fuentes
+- Clima, viento, ráfagas, sol, UV: Open-Meteo (gratis)
+- Olas, temperatura del agua, mareas estimadas: Open-Meteo Marine (gratis)
+- Alertas oficiales: SMN (ssl.smn.gob.ar/CAP/AR.php), filtradas por "Zona para alertas" en Ajustes
+- Alertas propias: ráfagas ≥ 60 km/h, lluvia ≥ 70 %, heladas, calculadas del pronóstico
+- Noticias: Infobae, Clarín, La Nación, Página/12, Ámbito, Perfil, BBC Mundo, DW, France 24, El País, CNN Español
 
-## Paso 3: Instalar en el celular
-1. Abrí esa dirección en Chrome (Android).
-2. Menú ⋮ → "Instalar app" (o "Agregar a pantalla principal").
-3. Queda el ícono del micrófono con el nombre "Asistente".
-
-## Paso 4: Configurar
-1. Abrí la app: se abre ⚙️ Ajustes automáticamente.
-2. Pegá la clave de Gemini → "Probar Gemini" → debe decir ✅.
-3. (Opcional) Clave de Claude como respaldo (console.anthropic.com, pago por uso).
-4. Poné tu nombre, elegí la voz → Guardar.
-5. Tocá 🎤 y aceptá el permiso de micrófono.
-
-## Si algo falla
-- "Gemini 404 / model not found": cambiá el modelo en Ajustes (ej. gemini-3.5-flash-lite).
-- "Gemini 429": se alcanzó el límite gratuito del momento; si cargaste Claude, responde Claude.
-- El micrófono no anda: Chrome → ⋮ → Configuración → Configuración de sitios → Micrófono → permitir tu sitio.
-- No ves los cambios después de actualizar archivos: cerrá y abrí la app dos veces.
-
-## Seguridad
-Las claves quedan guardadas solo en tu teléfono (no en GitHub). No compartas la dirección con la app ya configurada en otro dispositivo sin cargar sus propias claves.
+## Importante sobre las mareas
+Son estimadas por un modelo: los horarios son aproximados y las alturas están medidas
+respecto al nivel medio del mar (no coinciden con las tablas oficiales). Para pesca o
+navegación, verificar en la tabla oficial (enlace configurable en Ajustes).
