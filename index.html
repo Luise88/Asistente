@@ -75,11 +75,27 @@
   .status { font-size: 13px; margin-top: 8px; }
 
   /* Botones rápidos */
-  .quick { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; scrollbar-width: none; }
+  .quick { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 8px; scrollbar-width: none; }
   .quick::-webkit-scrollbar { display: none; }
   .chip { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 18px;
-    padding: 8px 14px; font-size: 14px; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+    padding: 8px 11px; font-size: 14px; white-space: nowrap; cursor: pointer; flex: 1 0 auto; }
   .chip:active { background: #334155; }
+  @media (max-width: 380px) { .chip { padding: 7px 7px; font-size: 13px; } .quick { gap: 4px; } }
+
+  /* Menú de noticias */
+  footer { position: relative; }
+  #newsMenu { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 8px); background: var(--panel);
+    border: 1px solid #334155; border-radius: 16px; padding: 12px; box-shadow: 0 -8px 30px rgba(0,0,0,.45); z-index: 5;
+    animation: up .15s ease-out; }
+  #newsMenu[hidden] { display: none; }
+  @keyframes up { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .nm-title { font-size: 13px; color: var(--muted); margin: 0 4px 10px; }
+  .nm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .nm-grid button { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 12px;
+    padding: 10px 4px; font-size: 22px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .nm-grid button span { font-size: 11px; line-height: 1.2; text-align: center; }
+  .nm-grid button:active { background: #334155; }
+  #newsBtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 
   /* Tarjetas (clima, noticias) */
   .msg.card { white-space: normal; max-width: 94%; }
@@ -137,10 +153,20 @@
     <button class="chip" data-q="Mi día">🌅 Mi día</button>
     <button class="chip" data-q="Clima">☀️ Clima</button>
     <button class="chip" data-q="Mar">🌊 Mar</button>
-    <button class="chip" data-q="Noticias">📰 Noticias</button>
-    <button class="chip" data-q="Noticias de Comodoro">📍 Comodoro</button>
-    <button class="chip" data-q="Noticias de Argentina">🇦🇷 Argentina</button>
-    <button class="chip" data-q="Noticias del mundo">🌍 Mundo</button>
+    <button class="chip" id="newsBtn" aria-haspopup="true" aria-expanded="false">📰 Noticias ▾</button>
+  </div>
+  <div id="newsMenu" role="menu" hidden>
+    <div class="nm-title">📰 Noticias</div>
+    <div class="nm-grid">
+      <button role="menuitem" data-q="Noticias">⚡<span>Último momento</span></button>
+      <button role="menuitem" data-q="Noticias de Comodoro">📍<span>Comodoro</span></button>
+      <button role="menuitem" data-q="Noticias de economía">💰<span>Economía</span></button>
+      <button role="menuitem" data-q="Noticias de deportes">⚽<span>Deportes</span></button>
+      <button role="menuitem" data-q="Noticias de ciencia">🔬<span>Ciencia</span></button>
+      <button role="menuitem" data-q="Noticias de espectáculos">🎬<span>Cine y TV</span></button>
+      <button role="menuitem" data-q="Noticias del mundo">🌍<span>Mundo</span></button>
+      <button role="menuitem" data-q="Resumime las noticias">✨<span>Resumen con IA</span></button>
+    </div>
   </div>
   <div id="live"></div>
   <div class="bar">
@@ -215,7 +241,7 @@ const DEFAULTS = {
   claudeKey: '', claudeModel: 'claude-haiku-5-5',
   userName: '', voiceName: '', autoSpeak: true, autoSend: true,
   useGPS: true, city: '', cityGeo: null,
-  alertZone: 'Escalante, Comodoro', tideLink: 'https://tablademareas.com/'
+  alertZone: 'Escalante, Comodoro', tideLink: 'https://tablademareas.com/ar/chubut/comodoro-rivadavia'
 };
 const MAX_HISTORY = 12; // mensajes recordados para dar contexto
 
@@ -227,6 +253,7 @@ function store(key, val) {
 }
 let cfg = Object.assign({}, DEFAULTS, store('cfg') || {});
 let history = store('history') || [];
+if (!cfg.tideLink || cfg.tideLink === 'https://tablademareas.com/') cfg.tideLink = DEFAULTS.tideLink;
 
 /* ============ ELEMENTOS ============ */
 const $ = id => document.getElementById(id);
@@ -730,40 +757,82 @@ function diverse(items, n) {
   return out;
 }
 const NOT_TOPIC = /^(hoy|ahora|la argentina|argentina|el pais|pais|el mundo|mundo|ultimo momento|internacionales?|nacionales?|locales?|del dia|comodoro( rivadavia)?|chubut|la zona|mi ciudad|la ciudad)$/;
+const SECCIONES = {
+  economia: { rx: /economi|finanza|mercados|negocios/, name: '💰 Economía' },
+  deportes: { rx: /deport|futbol/, name: '⚽ Deportes' },
+  ciencia: { rx: /ciencia|cientific|tecnolog/, name: '🔬 Ciencia y tecnología' },
+  espectaculos: { rx: /espectaculo|\bcine\b|television|\btv\b|\bseries\b|peliculas|farandula/, name: '🎬 Cine y TV' }
+};
+function newsSection(t) {
+  for (const [k, v] of Object.entries(SECCIONES)) if (v.rx.test(t)) return { key: k, ...v };
+  return null;
+}
+function newsScope(t) {
+  if (/comodoro|chubut|local|patagoni|zona|ciudad/.test(t)) return { name: 'Comodoro', ok: r => r.includes('local') };
+  if (/argentin|nacional|\bpais\b/.test(t)) return { name: 'Argentina', ok: r => r.includes('ar') || r.includes('local') };
+  if (/mundo|internacional|exterior/.test(t)) return { name: 'Mundo', ok: r => r.includes('mundo') };
+  return { name: '', ok: () => true };
+}
 async function buildNews(t, max = 8, original = '') {
   const data = await loadNews();
-  let items = data.items;
-  let scope = 'todas';
-  if (/comodoro|chubut|local|patagoni|zona|ciudad/.test(t)) { scope = 'Comodoro'; items = items.filter(i => i.region === 'local'); }
-  else if (/argentin|nacional|\bpais\b/.test(t)) { scope = 'Argentina'; items = items.filter(i => i.region === 'ar' || i.region === 'local'); }
-  else if (/mundo|internacional|exterior/.test(t)) { scope = 'Mundo'; items = items.filter(i => i.region === 'mundo'); }
+  const sc = newsScope(t);
+  const sec = newsSection(t);
+  let items = data.items.filter(i => sc.ok([i.region]) && (!sec || i.categoria === sec.key));
 
-  let topic = null, note = '';
-  const m = t.match(/(?:noticias?|titulares|novedades)\s+(?:de|sobre|del|acerca de|de la|de los)\s+(.+?)[?.!]*$/);
+  // 1) Búsqueda por tema: se busca en todos los titulares
+  let topic = null, note = '', pick = null;
+  const m = sec ? null : t.match(/(?:noticias?|titulares|novedades)\s+(?:de|sobre|del|acerca de|de la|de los)\s+(.+?)[?.!]*$/);
   if (m && !NOT_TOPIC.test(m[1].trim())) {
     const shown = (original || '').match(/(?:de|sobre|del|acerca de|de la|de los)\s+(.+?)[?.!]*$/i);
     topic = shown ? shown[1].trim() : m[1].trim();
     const words = m[1].trim().split(/\s+/).filter(w => w.length >= 4);
     const hits = items.filter(i => { const s = norm(i.titulo + ' ' + (i.resumen || '')); return words.some(w => s.includes(w)); });
-    if (hits.length) items = hits;
-    else note = `No encontré titulares recientes sobre "${topic}". Te paso los generales. `;
+    if (hits.length) pick = hits.slice(0, max);
+    else note = `No encontré titulares recientes sobre "${topic}". Te paso lo más destacado. `;
   }
-  const pick = topic && !note ? items.slice(0, max) : diverse(items, max);
+  // 2) Sin tema: lo más destacado (temas que cubren varios medios)
+  let destacado = false;
+  if (!pick) {
+    const base = sec ? ((data.secciones || {})[sec.key] || []) : (data.destacadas || []);
+    const dest = base.filter(g => sc.ok(g.regiones || []));
+    if (dest.length) { pick = dest.slice(0, max); destacado = true; }
+    else pick = diverse(items, max);
+  }
   if (!pick.length) throw new Error('No hay titulares para esa búsqueda.');
 
-  const title = topic && !note ? `📰 Noticias sobre ${escapeHtml(topic)}` : `📰 Últimas noticias${scope !== 'todas' ? ' · ' + scope : ''}`;
+  const title = topic && !note ? `📰 Noticias sobre ${escapeHtml(topic)}`
+    : sec ? `${sec.name}${sc.name ? ' · ' + sc.name : ''}`
+    : `📰 ${destacado ? 'Último momento: lo más destacado' : 'Últimas noticias'}${sc.name ? ' · ' + sc.name : ''}`;
+  const medios = i => i.cantidad > 1 ? ` · <b>${i.cantidad} medios</b>` : '';
   const li = pick.map(i => `<li><a href="${escapeHtml(i.link)}" target="_blank" rel="noopener">${escapeHtml(i.titulo)}</a>` +
-    `<span class="src">${escapeHtml(i.fuente)}${i.fecha ? ' · ' + hace(i.fecha) : ''}</span></li>`).join('');
+    `<span class="src">${escapeHtml(i.fuente)}${medios(i)}${i.fecha ? ' · ' + hace(i.fecha) : ''}</span></li>`).join('');
   const html = `<div class="news"><h4>${title}</h4>${note ? `<div class="desc">${escapeHtml(note)}</div>` : ''}<ol>${li}</ol>` +
-    `<div class="upd">Actualizado ${hace(data.actualizado)} · tocá un titular para leerlo</div></div>`;
+    `<div class="upd">${destacado ? 'Ordenado por cuántos medios cubren cada tema · ' : ''}Actualizado ${hace(data.actualizado)} · tocá un titular para leerlo</div></div>`;
   const top = pick.slice(0, 5);
-  const speech = note + 'Estos son los últimos titulares. ' + top.map(i => `De ${i.fuente}: ${i.titulo}.`).join(' ');
+  const speech = note + (sec ? `Noticias de ${sec.name.replace(/^\S+\s/, '')}. ` : destacado ? 'Esto es lo más destacado. ' : 'Estos son los últimos titulares. ') +
+    top.map(i => `${i.titulo}.`).join(' ');
   const text = 'Titulares: ' + pick.map((i, k) => `${k + 1}) ${i.titulo} (${i.fuente})`).join(' ');
   return { html, speech, text };
 }
 async function newsReply(t, original) {
   const n = await buildNews(t, 8, original);
   return { ...n, by: 'Noticias (sin IA)' };
+}
+// "Resumime las noticias" → la IA arma un resumen con los temas destacados reales
+async function newsAI(t) {
+  const data = await loadNews();
+  const sc = newsScope(t), sec = newsSection(t);
+  const base = sec ? ((data.secciones || {})[sec.key] || []) : (data.destacadas || []);
+  const dest = base.filter(g => sc.ok(g.regiones || [])).slice(0, 15);
+  const src = dest.length ? dest : diverse(data.items.filter(i => sc.ok([i.region]) && (!sec || i.categoria === sec.key)), 15);
+  const ctx = 'Abajo están los TEMAS DESTACADOS DE HOY (fuente: RSS de medios; "medios" = cuántos lo cubren). ' +
+    'Respondé usando solo esta información: resumí lo más importante en 4 a 6 oraciones, de lo más a lo menos relevante, ' +
+    'sin opinar ni tomar partido. Si preguntan algo que no está, decilo.\n\n' +
+    src.map((g, k) => `${k + 1}. ${g.titulo} (${g.fuente}${g.cantidad > 1 ? ', ' + g.cantidad + ' medios' : ''})${g.resumen ? ': ' + g.resumen : ''}`).join('\n');
+  try {
+    const r = await askAI(history.slice(-MAX_HISTORY), ctx);
+    return { text: r.text, by: r.by + ' + noticias' };
+  } catch (e) { return newsReply(t, t); }
 }
 
 /* ============ MI DÍA ============ */
@@ -789,7 +858,8 @@ async function myDay() {
 async function routeLocal(text) {
   const t = norm(text);
   if (/(mi dia|resumen del dia|como viene (el|mi) dia)/.test(t)) return myDay();
-  if (/(noticia|titulares|ultimo momento|que esta pasando|novedades)/.test(t)) return newsReply(t, text);
+  if (/(resumi|resumen de (las )?noticias|que paso hoy|que esta pasando|que es lo mas importante|contame (las )?noticias)/.test(t)) return newsAI(t);
+  if (/(noticia|titulares|ultimo momento|novedades)/.test(t)) return newsReply(t, text);
   const q = t.replace(/[¿?¡!.,]/g, '').trim();
   // Pedido simple → tarjeta completa, sin IA
   if (/^(el )?(clima|pronostico|tiempo|viento|alertas?)( de hoy| hoy| ahora)?$/.test(q) ||
@@ -956,7 +1026,17 @@ function stopListening() { if (rec) rec.stop(); }
 mic.onclick = () => listening ? stopListening() : startListening();
 $('send').onclick = () => send(txt.value);
 txt.addEventListener('keydown', e => { if (e.key === 'Enter') send(txt.value); });
-document.querySelectorAll('#quick .chip').forEach(b => b.onclick = () => send(b.dataset.q));
+document.querySelectorAll('#quick .chip[data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
+// Menú de noticias
+const newsBtn = $('newsBtn'), newsMenu = $('newsMenu');
+function toggleNews(open) {
+  open = open ?? newsMenu.hidden;
+  newsMenu.hidden = !open; newsBtn.setAttribute('aria-expanded', open);
+}
+newsBtn.onclick = e => { e.stopPropagation(); toggleNews(); };
+newsMenu.querySelectorAll('button[data-q]').forEach(b => b.onclick = () => { toggleNews(false); send(b.dataset.q); });
+document.addEventListener('click', e => { if (!newsMenu.hidden && !newsMenu.contains(e.target)) toggleNews(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleNews(false); });
 
 /* ============ BOTÓN SILENCIO ============ */
 function paintMute() { $('btnMute').textContent = cfg.autoSpeak ? '🔊' : '🔇'; }

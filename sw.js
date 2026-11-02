@@ -1,6 +1,6 @@
 // Service worker: permite instalar la app y abrirla rápido.
 // Al publicar cambios, subí el número de versión para forzar la actualización.
-const VERSION = 'asistente-v5';
+const VERSION = 'asistente-v8';
 const SHELL = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
