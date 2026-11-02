@@ -1,6 +1,6 @@
 // Service worker: permite instalar la app y abrirla rápido.
 // Al publicar cambios, subí el número de versión para forzar la actualización.
-const VERSION = 'asistente-v9';
+const VERSION = 'asistente-v10';
 const SHELL = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })   // siempre pregunta si hay versión nueva
       .then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return res; })
       .catch(() => caches.match(e.request).then(r => r || caches.match('index.html')))
   );
