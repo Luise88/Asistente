@@ -75,12 +75,26 @@
   .status { font-size: 13px; margin-top: 8px; }
 
   /* Botones rápidos */
-  .quick { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 8px; scrollbar-width: none; }
+  .quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; overflow-x: auto; margin-bottom: 8px; scrollbar-width: none; }
   .quick::-webkit-scrollbar { display: none; }
-  .chip { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 18px;
-    padding: 8px 11px; font-size: 14px; white-space: nowrap; cursor: pointer; flex: 1 0 auto; }
+  .chip { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 12px;
+    padding: 6px 2px; font-size: 19px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+  .chip span { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .chip:active { background: #334155; }
-  @media (max-width: 380px) { .chip { padding: 7px 7px; font-size: 13px; } .quick { gap: 4px; } }
+
+  /* Agenda */
+  .ev-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .ev { display: flex; gap: 10px; align-items: center; background: var(--panel2); border-radius: 10px; padding: 8px 10px; font-size: 14px; line-height: 1.3; }
+  .ev > span:nth-child(2) { flex: 1; }
+  .ev-t { color: var(--accent); font-size: 13px; min-width: 78px; }
+  .ev small { color: var(--muted); }
+  .confirm { background: var(--panel2); border-radius: 10px; padding: 10px 12px; font-size: 15px; line-height: 1.5; }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .act { flex: 1; border: none; border-radius: 10px; padding: 10px; font-size: 15px; cursor: pointer; }
+  .act.yes { background: var(--accent2); color: white; }
+  .act.no { background: #334155; color: var(--text); }
+  .act.small { flex: 0 0 auto; padding: 6px 10px; }
+  .act:disabled { opacity: .45; }
 
   /* Menú de noticias */
   footer { position: relative; }
@@ -150,10 +164,11 @@
 
 <footer>
   <div class="quick" id="quick">
-    <button class="chip" data-q="Mi día">🌅 Mi día</button>
-    <button class="chip" data-q="Clima">☀️ Clima</button>
-    <button class="chip" data-q="Mar">🌊 Mar</button>
-    <button class="chip" id="newsBtn" aria-haspopup="true" aria-expanded="false">📰 Noticias ▾</button>
+    <button class="chip" data-q="Mi día">🌅<span>Mi día</span></button>
+    <button class="chip" data-q="Agenda">📅<span>Agenda</span></button>
+    <button class="chip" data-q="Clima">☀️<span>Clima</span></button>
+    <button class="chip" data-q="Mar">🌊<span>Mar</span></button>
+    <button class="chip" id="newsBtn" aria-haspopup="true" aria-expanded="false">📰<span>Noticias ▾</span></button>
   </div>
   <div id="newsMenu" role="menu" hidden>
     <div class="nm-title">📰 Noticias</div>
@@ -215,10 +230,20 @@
     <input id="tideLink" type="text" placeholder="https://tablademareas.com/...">
     <div class="hint">Pegá la dirección de la página de tu ciudad: aparece como botón en la tarjeta 🌊 Mar.</div>
 
-    <h3>5. Probar conexión</h3>
+    <h3>5. Agenda (Google Calendar)</h3>
+    <label for="calUrl">Dirección del script (URL de la aplicación web)</label>
+    <input id="calUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+    <label for="calToken">Clave secreta del script</label>
+    <input id="calToken" type="password" placeholder="La que aparece al ejecutar 'configurar'" autocomplete="off">
+    <div class="hint">Ver INSTRUCTIVO-AGENDA.md. La clave queda solo en este teléfono.</div>
+
+    <h3>6. Probar conexión</h3>
     <div class="btns" style="margin-top:6px">
       <button class="btn ghost" id="testGemini">Probar Gemini</button>
       <button class="btn ghost" id="testClaude">Probar Claude</button>
+    </div>
+    <div class="btns" style="margin-top:8px">
+      <button class="btn ghost" id="testCal">Probar agenda</button>
     </div>
     <div class="status" id="testStatus"></div>
 
@@ -241,6 +266,7 @@ const DEFAULTS = {
   claudeKey: '', claudeModel: 'claude-haiku-5-5',
   userName: '', voiceName: '', autoSpeak: true, autoSend: true,
   useGPS: true, city: '', cityGeo: null,
+  calUrl: '', calToken: '',
   alertZone: 'Escalante, Comodoro', tideLink: 'https://tablademareas.com/ar/chubut/comodoro-rivadavia'
 };
 const MAX_HISTORY = 12; // mensajes recordados para dar contexto
@@ -271,20 +297,21 @@ function systemPrompt(extra) {
     'Tus respuestas se leen en voz alta: sé breve y claro (2 a 4 oraciones salvo que pidan detalle).',
     'No uses tablas, símbolos raros ni listas largas. Si hace falta enumerar, usá frases cortas.',
     'El clima, el mar y las noticias los resuelve la app: si te los piden sin datos, sugerí decir "clima", "mar" o "noticias", o tocar los botones de abajo.',
-    'Si te piden algo que todavía no podés hacer (agenda, recordatorios, mandar mensajes o correos), ',
+    'La agenda (Google Calendar) la maneja la app: si te piden agendar o consultar algo y llega a vos, sugerí decirlo con día y hora, por ejemplo "agendame dentista el jueves a las 10".',
+    'Si te piden algo que todavía no podés hacer (mandar mensajes o correos), ',
     'decí con naturalidad que esa función se está agregando pronto, y ayudá en lo que puedas.',
     'Si no sabés algo o puede estar desactualizado, decilo.'
   ].join(' ') + (extra ? '\n\n' + extra : '');
 }
 
 /* ============ PROVEEDORES DE IA ============ */
-async function askGemini(msgs, extra) {
+async function askGemini(msgs, extra, opts = {}) {
   if (!cfg.geminiKey) throw new Error('Falta la clave de Gemini');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`;
   const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: systemPrompt(extra) }] },
+    systemInstruction: { parts: [{ text: opts.raw ? extra : systemPrompt(extra) }] },
     contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-    generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
+    generationConfig: opts.json ? { temperature: 0, maxOutputTokens: 512, responseMimeType: 'application/json' } : { temperature: 0.7, maxOutputTokens: 1024 }
   });
   // Intento 1: clave en el encabezado (forma recomendada)
   let res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body });
@@ -299,7 +326,7 @@ async function askGemini(msgs, extra) {
   return text;
 }
 
-async function askClaude(msgs, extra) {
+async function askClaude(msgs, extra, opts = {}) {
   if (!cfg.claudeKey) throw new Error('Falta la clave de Claude');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -310,7 +337,7 @@ async function askClaude(msgs, extra) {
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: cfg.claudeModel, max_tokens: 1024, system: systemPrompt(extra),
+      model: cfg.claudeModel, max_tokens: 1024, system: opts.raw ? extra : systemPrompt(extra),
       messages: msgs.map(m => ({ role: m.role, content: m.content }))
     })
   });
@@ -322,14 +349,14 @@ async function askClaude(msgs, extra) {
 }
 
 // Primero Gemini; si falla y hay clave de Claude, usa Claude.
-async function askAI(msgs, extra) {
+async function askAI(msgs, extra, opts) {
   const errors = [];
   if (cfg.geminiKey) {
-    try { return { text: await askGemini(msgs, extra), by: 'Gemini' }; }
+    try { return { text: await askGemini(msgs, extra, opts), by: 'Gemini' }; }
     catch (e) { errors.push(e.message); }
   }
   if (cfg.claudeKey) {
-    try { return { text: await askClaude(msgs, extra), by: 'Claude (respaldo)' }; }
+    try { return { text: await askClaude(msgs, extra, opts), by: 'Claude (respaldo)' }; }
     catch (e) { errors.push(e.message); }
   }
   if (!cfg.geminiKey && !cfg.claudeKey) throw new Error('No hay ninguna clave cargada. Abrí ⚙️ Ajustes.');
@@ -835,6 +862,194 @@ async function newsAI(t) {
   } catch (e) { return newsReply(t, t); }
 }
 
+/* ============ AGENDA (Google Calendar vía Apps Script) ============ */
+const calReady = () => !!(cfg.calUrl && cfg.calToken);
+let pending = null;   // acción esperando confirmación: { type: 'crear' | 'borrar', ... }
+
+async function cal(action, data = {}) {
+  if (!calReady()) throw new Error('La agenda no está conectada. Cargá la dirección y la clave del script en ⚙️ Ajustes → Agenda.');
+  let res;
+  try {
+    // text/plain evita el "preflight" y es lo que acepta Apps Script
+    res = await fetch(cfg.calUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: cfg.calToken, action, ...data }) });
+  } catch (e) { throw new Error('No pude conectarme con tu agenda. Revisá la conexión o la dirección del script.'); }
+  const out = await res.json().catch(() => null);
+  if (!out) throw new Error('La agenda respondió algo inesperado. Revisá que la implementación sea "Aplicación web" con acceso "Cualquier usuario".');
+  if (!out.ok) throw new Error('Agenda: ' + (out.error || 'error desconocido'));
+  return out;
+}
+
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function parseYmd(s, h = 0, mi = 0) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d, h, mi); }
+function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function longDay(d) {
+  const l = dayLabel(d, true);
+  const f = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return (l === 'Hoy' || l === 'Mañana') ? `${l}, ${f}` : f.charAt(0).toUpperCase() + f.slice(1);
+}
+function evDayKey(ev) { return ev.todoElDia ? ev.fecha : ymd(new Date(ev.inicio)); }
+function evTime(ev) { return ev.todoElDia ? 'Todo el día' : `${hhmm(new Date(ev.inicio))}–${hhmm(new Date(ev.fin))}`; }
+
+async function listEvents(desde, hasta) {
+  const r = await cal('listar', { desde: desde.toISOString(), hasta: hasta.toISOString() });
+  return r.eventos || [];
+}
+
+// Tarjeta con los eventos agrupados por día
+function eventsBlock(evs, desde, hasta, titulo) {
+  const days = Math.round((hasta - desde) / 86400000);
+  let html = `<h4>📅 ${escapeHtml(titulo)}</h4>`, speech = '', count = 0;
+  for (let i = 0; i < days; i++) {
+    const d = addDays(desde, i), key = ymd(d);
+    const list = evs.filter(e => evDayKey(e) === key);
+    if (!list.length && days > 2) continue;
+    html += `<div class="sub">${escapeHtml(longDay(d))}</div>`;
+    if (!list.length) { html += '<div class="desc">Nada agendado.</div>'; continue; }
+    html += '<div class="ev-list">' + list.map(e =>
+      `<div class="ev"><span class="ev-t">${evTime(e)}</span><span><b>${escapeHtml(e.titulo)}</b>` +
+      (e.lugar ? `<br><small>📍 ${escapeHtml(e.lugar)}</small>` : '') +
+      (!e.propio ? `<br><small>${escapeHtml(e.calendario)}</small>` : '') + '</span></div>').join('') + '</div>';
+    const parts = list.slice(0, 6).map(e => e.todoElDia ? `todo el día, ${e.titulo}` : `a las ${hhmm(new Date(e.inicio))}, ${e.titulo}`);
+    speech += `${dayLabel(d, true)}: ${parts.join('; ')}. `;
+    count += list.length;
+  }
+  if (!count) speech = `No tenés nada agendado ${days <= 1 ? 'para ' + dayLabel(desde, true).toLowerCase() : 'en esos días'}.`;
+  if (!count && days > 2) html += '<div class="desc">No tenés nada agendado en esos días. 🎉</div>';
+  return { html, speech, text: speech, count };
+}
+
+async function agendaRange(desde, hasta, titulo) {
+  const evs = await listEvents(desde, hasta);
+  const b = eventsBlock(evs, desde, hasta, titulo);
+  return { html: b.html, speech: b.speech, text: b.text, by: 'Agenda · Google Calendar' };
+}
+
+// La IA convierte el pedido en datos (fecha, hora, título…). No ve tu agenda: solo tu frase.
+async function parseAgenda(text) {
+  const now = new Date();
+  const prox = Array.from({ length: 15 }, (_, i) => {
+    const d = addDays(now, i);
+    return `${d.toLocaleDateString('es-AR', { weekday: 'long' })} ${ymd(d)}${i === 0 ? ' (hoy)' : i === 1 ? ' (mañana)' : ''}`;
+  }).join(', ');
+  const sys = `Convertís pedidos de agenda en español (Argentina) a JSON. Ahora: ${now.toLocaleDateString('es-AR', { weekday: 'long' })} ${ymd(now)}, ${hhmm(now)} h.
+Próximos días: ${prox}.
+Devolvé SOLO un objeto JSON, sin texto extra, con:
+- "accion": "crear", "consultar", "borrar" o "ninguna".
+- Para "crear": "titulo" (corto, con mayúscula inicial, sin palabras como "agendame" o "recordame"), "fecha" (YYYY-MM-DD), "hora" ("HH:MM" 24 h, o null si no dijo hora), "duracion_min" (60 si no lo dijo; 30 para llamadas o recordatorios), "lugar" ("" si no dijo), "aviso_min" (0 si dijo "recordame" o "avisame"; si no, 30).
+- Para "consultar": "desde" y "hasta" (YYYY-MM-DD, ambos inclusive). Sin fecha → hoy.
+- Para "borrar": "desde", "hasta" y "buscar" (palabras clave del evento a borrar).
+Reglas: "a la mañana"=09:00, "al mediodía"=12:00, "a la tarde"=16:00, "a la noche"=21:00. Un día de la semana sin fecha es el próximo (hoy solo si la hora todavía no pasó). "La semana que viene" = de lunes a domingo siguientes. "Esta semana" = de hoy al domingo. "El finde" = sábado y domingo próximos. "Pasado mañana" = hoy + 2.`;
+  const r = await askAI([{ role: 'user', content: text }], sys, { raw: true, json: true });
+  const m = r.text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('No entendí bien el pedido de agenda. Probá decirlo con día y hora.');
+  return JSON.parse(m[0]);
+}
+
+function confirmButtons(yes, no = '✖ Cancelar') {
+  return `<div class="btn-row"><button class="act yes" data-say="Sí">${yes}</button><button class="act no" data-say="No">${no}</button></div>`;
+}
+
+async function agendaCreate(p) {
+  if (!p.fecha) throw new Error('No entendí la fecha. Probá: "agendame dentista el jueves a las 10".');
+  const allDay = !p.hora;
+  const [h, mi] = allDay ? [0, 0] : p.hora.split(':').map(Number);
+  const ini = parseYmd(p.fecha, h, mi);
+  const fin = new Date(ini.getTime() + (Number(p.duracion_min) || 60) * 60000);
+  const aviso = p.aviso_min == null ? 30 : Number(p.aviso_min);
+  const data = { titulo: p.titulo || 'Evento', todoElDia: allDay, fecha: p.fecha, inicio: ini.toISOString(), fin: fin.toISOString(),
+    lugar: p.lugar || '', recordatorioMin: allDay ? null : aviso };
+  pending = { type: 'crear', data };
+  const cuando = allDay ? `${longDay(ini)} · todo el día` : `${longDay(ini)} · ${hhmm(ini)} a ${hhmm(fin)}`;
+  const avisoTxt = allDay ? '' : aviso === 0 ? '🔔 Aviso a la hora del evento' : `🔔 Aviso ${aviso} min antes`;
+  const html = `<h4>📅 ¿Lo agendo?</h4><div class="confirm"><b>${escapeHtml(data.titulo)}</b><br>${escapeHtml(cuando)}` +
+    (data.lugar ? `<br>📍 ${escapeHtml(data.lugar)}` : '') + (avisoTxt ? `<br><small>${avisoTxt}</small>` : '') + '</div>' +
+    confirmButtons('✅ Agendar') + '<div class="upd">También podés decir "sí" o "no".</div>';
+  const speech = `¿Agendo ${data.titulo}, ${allDay ? longDay(ini).toLowerCase() + ', todo el día' : longDay(ini).toLowerCase() + ' a las ' + hhmm(ini)}?`;
+  return { html, speech, text: speech, by: 'Agenda (esperando confirmación)' };
+}
+
+async function agendaDelete(p) {
+  const desde = startOfDay(p.desde ? parseYmd(p.desde) : new Date());
+  const hasta = addDays(startOfDay(p.hasta ? parseYmd(p.hasta) : desde), 1);
+  const evs = await listEvents(desde, hasta);
+  const words = norm(p.buscar || '').split(/\s+/).filter(w => w.length >= 3);
+  const hits = evs.filter(e => e.propio && (!words.length || words.some(w => norm(e.titulo).includes(w))));
+  if (!hits.length) return { text: `No encontré ningún evento${p.buscar ? ' de "' + p.buscar + '"' : ''} en esas fechas.`, by: 'Agenda · Google Calendar' };
+  pending = { type: 'borrar', options: hits.slice(0, 6) };
+  const lines = pending.options.map((e, i) =>
+    `<div class="ev"><span class="ev-t">${evTime(e)}</span><span><b>${escapeHtml(e.titulo)}</b><br><small>${escapeHtml(longDay(new Date(e.todoElDia ? parseYmd(e.fecha) : e.inicio)))}</small></span>` +
+    `<button class="act no small" data-say="Borrar ${i + 1}">🗑</button></div>`).join('');
+  const one = pending.options.length === 1 ? pending.options[0] : null;
+  const html = `<h4>🗑 ¿Cuál borro?</h4><div class="ev-list">${lines}</div>` +
+    (one ? confirmButtons('🗑 Borrar', '✖ No') : '<div class="btn-row"><button class="act no" data-say="No">✖ Cancelar</button></div>');
+  const speech = one ? `¿Borro ${one.titulo}, ${one.todoElDia ? 'todo el día' : 'a las ' + hhmm(new Date(one.inicio))}?`
+    : `Encontré ${pending.options.length} eventos. Tocá el que querés borrar o decí "borrar" y el número.`;
+  return { html, speech, text: speech, by: 'Agenda (esperando confirmación)' };
+}
+
+// Respuestas a una confirmación pendiente ("sí", "no", "borrar 2")
+async function handlePending(t) {
+  if (!pending) return null;
+  const q = t.replace(/[¿?¡!.,]/g, '').trim();
+  const yes = /^(si|dale|ok|okey|listo|confirmo|confirmar|de una|agendalo|agendar|borralo|borrar|correcto|perfecto|exacto|claro)\b/.test(q);
+  const no = /^(no|cancela|cancelar|dejalo|olvidalo|nada)\b/.test(q);
+  const num = q.match(/^borra(?:r)?(?: el| la| opcion)? (\d)/);
+  if (!yes && !no && !num) { pending = null; return null; }   // cambió de tema
+  const p = pending; pending = null;
+  if (no) return { text: 'Listo, no hago nada.', by: 'Agenda' };
+  if (p.type === 'crear') {
+    const r = await cal('crear', p.data);
+    const ev = r.evento, d = new Date(ev.todoElDia ? parseYmd(ev.fecha) : ev.inicio);
+    const txt = `Listo, agendé ${ev.titulo} ${ev.todoElDia ? 'para ' + longDay(d).toLowerCase() : longDay(d).toLowerCase() + ' a las ' + hhmm(d)}.`;
+    return { text: '✅ ' + txt, speech: txt, by: 'Agenda · Google Calendar' };
+  }
+  if (p.type === 'borrar') {
+    const idx = num ? Number(num[1]) - 1 : (p.options.length === 1 ? 0 : -1);
+    const ev = p.options[idx];
+    if (!ev) { pending = p; return { text: 'Decime el número del evento a borrar, o tocá el 🗑 al lado.', by: 'Agenda' }; }
+    await cal('borrar', { id: ev.id, inicio: ev.inicio });
+    return { text: `🗑 Listo, borré ${ev.titulo}.`, speech: `Listo, borré ${ev.titulo}.`, by: 'Agenda · Google Calendar' };
+  }
+  return null;
+}
+
+// Pedidos simples que no necesitan IA
+function quickAgenda(q) {
+  const hoy = startOfDay(new Date());
+  if (/^((mi |la )?agenda( de hoy)?|que tengo( para)? hoy|tengo algo hoy)$/.test(q)) return agendaRange(hoy, addDays(hoy, 2), 'Tu agenda: hoy y mañana');
+  if (/^((mi |la )?agenda de manana|que tengo( para)? manana|tengo algo manana)$/.test(q)) return agendaRange(addDays(hoy, 1), addDays(hoy, 2), 'Tu agenda de mañana');
+  if (/^((mi |la )?agenda de (la|esta) semana|que tengo (esta|la) semana)$/.test(q)) return agendaRange(hoy, addDays(hoy, 7), 'Tu agenda: próximos 7 días');
+  return null;
+}
+
+async function agendaReply(text, q) {
+  if (!calReady()) return { text: '📅 Todavía no conectaste tu agenda. Seguí el instructivo y cargá la dirección y la clave en ⚙️ Ajustes → Agenda.', by: 'Agenda' };
+  const quick = quickAgenda(q);
+  if (quick) return quick;
+  let p;
+  try { p = await parseAgenda(text); }
+  catch (e) { throw new Error('Para entender fechas y horas necesito la IA, y no respondió. ' + e.message); }
+  if (p.accion === 'crear') return agendaCreate(p);
+  if (p.accion === 'borrar') return agendaDelete(p);
+  if (p.accion === 'consultar') {
+    const desde = startOfDay(p.desde ? parseYmd(p.desde) : new Date());
+    const hasta = addDays(startOfDay(p.hasta ? parseYmd(p.hasta) : desde), 1);
+    const n = Math.round((hasta - desde) / 86400000);
+    return agendaRange(desde, hasta, n === 1 ? `Tu agenda: ${longDay(desde)}` : `Tu agenda: ${n} días`);
+  }
+  return null;   // no era de agenda: sigue la IA normal
+}
+
+// Bloque compacto para "Mi día"
+async function agendaToday() {
+  const hoy = startOfDay(new Date());
+  const evs = await listEvents(hoy, addDays(hoy, 1));
+  const b = eventsBlock(evs, hoy, addDays(hoy, 1), 'Tu agenda de hoy');
+  return b;
+}
+
 /* ============ MI DÍA ============ */
 async function myDay() {
   const h = new Date().getHours();
@@ -842,6 +1057,10 @@ async function myDay() {
   const fecha = new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
   const head = `${saludo}${cfg.userName ? ', ' + cfg.userName : ''}. Hoy es ${fecha}.`;
   let html = `<h4>🌅 ${escapeHtml(head)}</h4>`, speech = head + ' ';
+  if (calReady()) {
+    try { const a = await agendaToday(); html += '<div class="sep"></div>' + a.html; speech += (a.count ? a.speech : 'Hoy no tenés nada agendado.') + ' '; }
+    catch (e) { html += `<div class="sep"></div><div class="desc">📅 ${escapeHtml(e.message)}</div>`; }
+  }
   try {
     const w = await buildWeather(); html += '<div class="sep"></div>' + w.html; speech += w.speech + ' ';
     const tl = tideLine(await getWxData());
@@ -850,14 +1069,21 @@ async function myDay() {
   catch (e) { html += `<div class="sep"></div><div class="desc">☀️ ${escapeHtml(e.message)}</div>`; }
   try { const n = await buildNews('', 5); html += '<div class="sep"></div>' + n.html; speech += n.speech; }
   catch (e) { html += `<div class="sep"></div><div class="desc">📰 ${escapeHtml(e.message)}</div>`; }
-  html += '<div class="sep"></div><div class="desc">📅 Tu agenda va a aparecer acá cuando sumemos esa función.</div>';
+  if (!calReady()) html += '<div class="sep"></div><div class="desc">📅 Conectá tu agenda en ⚙️ Ajustes para verla acá.</div>';
   return { html, speech, text: speech, by: 'Mi día (sin IA)' };
 }
 
 /* ============ ¿LO RESUELVE LA APP SIN IA? ============ */
 async function routeLocal(text) {
   const t = norm(text);
+  const pend = await handlePending(t);
+  if (pend) return pend;
   if (/(mi dia|resumen del dia|como viene (el|mi) dia)/.test(t)) return myDay();
+  const qa = t.replace(/[¿?¡!.,]/g, '').trim();
+  if (/(\bagenda|agendame|agendar|calendario|\banota(me)?\b|recordame|recorda(me)?\b|avisame|\bturno|reunion|\bcita\b|\bevento|que tengo|tengo algo|estoy libre|estoy ocupad|cumpleanos|(cancela|borra|elimina|saca)(me|r)? (el|la|mi|lo de)\b)/.test(qa)) {
+    const a = await agendaReply(text, qa);
+    if (a) return a;
+  }
   if (/(resumi|resumen de (las )?noticias|que paso hoy|que esta pasando|que es lo mas importante|contame (las )?noticias)/.test(t)) return newsAI(t);
   if (/(noticia|titulares|ultimo momento|novedades)/.test(t)) return newsReply(t, text);
   const q = t.replace(/[¿?¡!.,]/g, '').trim();
@@ -1027,6 +1253,13 @@ mic.onclick = () => listening ? stopListening() : startListening();
 $('send').onclick = () => send(txt.value);
 txt.addEventListener('keydown', e => { if (e.key === 'Enter') send(txt.value); });
 document.querySelectorAll('#quick .chip[data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
+// Botones dentro de las tarjetas (Agendar / Cancelar / Borrar)
+chat.addEventListener('click', e => {
+  const b = e.target.closest('button[data-say]');
+  if (!b || busy) return;
+  b.closest('.msg').querySelectorAll('button[data-say]').forEach(x => x.disabled = true);
+  send(b.dataset.say);
+});
 // Menú de noticias
 const newsBtn = $('newsBtn'), newsMenu = $('newsMenu');
 function toggleNews(open) {
@@ -1049,6 +1282,7 @@ function openSettings() {
   $('userName').value = cfg.userName; $('voiceSel').value = cfg.voiceName;
   $('autoSpeak').checked = cfg.autoSpeak; $('autoSend').checked = cfg.autoSend;
   $('useGPS').checked = cfg.useGPS; $('city').value = cfg.city;
+  $('calUrl').value = cfg.calUrl; $('calToken').value = cfg.calToken;
   $('alertZone').value = cfg.alertZone; $('tideLink').value = cfg.tideLink;
   $('testStatus').textContent = '';
   $('settings').classList.add('open');
@@ -1060,6 +1294,7 @@ function readForm() {
     userName: $('userName').value.trim(), voiceName: $('voiceSel').value,
     autoSpeak: $('autoSpeak').checked, autoSend: $('autoSend').checked,
     useGPS: $('useGPS').checked, city: $('city').value.trim(),
+    calUrl: $('calUrl').value.trim(), calToken: $('calToken').value.trim(),
     alertZone: $('alertZone').value.trim(), tideLink: $('tideLink').value.trim()
   };
 }
@@ -1080,6 +1315,13 @@ async function test(fn, name) {
 }
 $('testGemini').onclick = () => test(askGemini, 'Gemini');
 $('testClaude').onclick = () => test(askClaude, 'Claude');
+$('testCal').onclick = async () => {
+  const saved = cfg; cfg = Object.assign({}, cfg, readForm());
+  const st = $('testStatus'); st.style.color = 'var(--muted)'; st.textContent = 'Probando agenda…';
+  try { const r = await cal('ping'); st.style.color = 'var(--ok)'; st.textContent = `✅ Agenda conectada: ${r.calendario} (${r.zona})`; }
+  catch (e) { st.style.color = 'var(--danger)'; st.textContent = '❌ ' + e.message; }
+  finally { cfg = saved; }
+};
 $('clearChat').onclick = () => {
   if (!confirm('¿Borrar toda la conversación?')) return;
   history = []; store('history', history);
