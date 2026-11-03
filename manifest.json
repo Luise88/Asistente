@@ -1,8 +1,9 @@
 {
+  "id": "./?app=asistente-v2",
   "name": "Asistente Personal",
   "short_name": "Asistente",
   "description": "Asistente personal por voz",
-  "start_url": "./",
+  "start_url": "./?app=asistente-v2",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
