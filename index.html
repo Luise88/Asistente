@@ -263,7 +263,9 @@
     <div class="btns">
       <button class="btn warn" id="clearChat">Borrar conversación</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:14px">Versión 13 · Etapa 4 (WhatsApp)</div>
+    <div class="btns"><button class="btn ghost" id="repairApp">🛠 Reparar app (si no abre o no se actualiza)</button></div>
+    <div class="hint">Borra la copia guardada de la app y la vuelve a descargar. Tus claves y ajustes NO se borran.</div>
+    <div class="hint" style="text-align:center;margin-top:14px">Versión 14 · Etapa 4 (WhatsApp)</div>
     <div class="btns">
       <button class="btn ghost" id="closeSettings">Cancelar</button>
       <button class="btn primary" id="saveSettings">Guardar</button>
@@ -1661,7 +1663,19 @@ $('clearChat').onclick = () => {
 paintMute();
 renderHistory();
 if (!cfg.geminiKey && !cfg.claudeKey) setTimeout(openSettings, 400);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Reparación: borra service worker y copias guardadas (no toca claves ni ajustes)
+async function repararApp() {
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r => r.unregister()));
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  } catch (e) { /* seguimos igual */ }
+  location.replace(location.pathname + '?r=' + Date.now());
+}
+$('repairApp').onclick = repararApp;
+if (/[?&]reparar\b/.test(location.search)) repararApp();
+else if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>
