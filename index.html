@@ -250,7 +250,7 @@
     <div class="btns">
       <button class="btn warn" id="clearChat">Borrar conversación</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:14px">Versión 10 · Etapa 3 (agenda)</div>
+    <div class="hint" style="text-align:center;margin-top:14px">Versión 11 · Etapa 3 (agenda)</div>
     <div class="btns">
       <button class="btn ghost" id="closeSettings">Cancelar</button>
       <button class="btn primary" id="saveSettings">Guardar</button>
@@ -306,14 +306,12 @@ function systemPrompt(extra) {
 }
 
 /* ============ PROVEEDORES DE IA ============ */
-async function askGemini(msgs, extra, opts = {}) {
-  if (!cfg.geminiKey) throw new Error('Falta la clave de Gemini');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`;
-  const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: opts.raw ? extra : systemPrompt(extra) }] },
-    contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-    generationConfig: opts.json ? { temperature: 0, maxOutputTokens: 512, responseMimeType: 'application/json' } : { temperature: 0.7, maxOutputTokens: 1024 }
-  });
+// Modelos gratuitos de Gemini a probar si el principal está saturado (503) o sin cupo (429)
+const GEMINI_RESPALDO = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite'];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function geminiCall(model, body) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   // Intento 1: clave en el encabezado (forma recomendada)
   let res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body });
   // Intento 2: si la rechaza por autenticación, la envía en la dirección (compatibilidad con claves "AQ.")
@@ -321,11 +319,39 @@ async function askGemini(msgs, extra, opts = {}) {
     res = await fetch(url + '?key=' + encodeURIComponent(cfg.geminiKey), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${data.error?.message || res.statusText}`);
+  if (!res.ok) { const e = new Error(`Gemini ${res.status}: ${data.error?.message || res.statusText}`); e.status = res.status; throw e; }
   const text = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
-  if (!text) throw new Error('Gemini no devolvió respuesta');
+  if (!text) { const e = new Error('Gemini no devolvió respuesta'); e.status = 0; throw e; }
   return text;
 }
+
+async function askGemini(msgs, extra, opts = {}) {
+  if (!cfg.geminiKey) throw new Error('Falta la clave de Gemini');
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: opts.raw ? extra : systemPrompt(extra) }] },
+    contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    generationConfig: opts.json ? { temperature: 0, maxOutputTokens: 512, responseMimeType: 'application/json' } : { temperature: 0.7, maxOutputTokens: 1024 }
+  });
+  const models = [cfg.geminiModel, ...GEMINI_RESPALDO.filter(m => m !== cfg.geminiModel)];
+  let lastErr;
+  for (let i = 0; i < models.length; i++) {
+    // El modelo principal se reintenta una vez (las saturaciones suelen durar segundos)
+    for (let intento = 0; intento < (i === 0 ? 2 : 1); intento++) {
+      try {
+        const text = await geminiCall(models[i], body);
+        lastGeminiModel = models[i];
+        return text;
+      } catch (e) {
+        lastErr = e;
+        if (e.status === 400 || e.status === 401 || e.status === 403) throw e;   // clave o pedido inválido: no tiene sentido seguir
+        if (e.status === 503 || e.status === 500 || e.status === 0) { if (intento === 0 && i === 0) await sleep(1200); continue; }
+        break;   // 429 (sin cupo) o 404 (modelo inexistente): probar el siguiente modelo
+      }
+    }
+  }
+  throw lastErr;
+}
+let lastGeminiModel = '';
 
 async function askClaude(msgs, extra, opts = {}) {
   if (!cfg.claudeKey) throw new Error('Falta la clave de Claude');
@@ -353,7 +379,7 @@ async function askClaude(msgs, extra, opts = {}) {
 async function askAI(msgs, extra, opts) {
   const errors = [];
   if (cfg.geminiKey) {
-    try { return { text: await askGemini(msgs, extra, opts), by: 'Gemini' }; }
+    try { const text = await askGemini(msgs, extra, opts); return { text, by: lastGeminiModel && lastGeminiModel !== cfg.geminiModel ? `Gemini (${lastGeminiModel})` : 'Gemini' }; }
     catch (e) { errors.push(e.message); }
   }
   if (cfg.claudeKey) {
@@ -1025,13 +1051,112 @@ function quickAgenda(q) {
   return null;
 }
 
+// Entiende sin IA los pedidos de agenda más comunes:
+// "recordame llamar a Juan mañana a las 9", "agendame dentista el jueves a las 10:30",
+// "anotá cumpleaños de mamá el 15 de diciembre", "avisame en 20 minutos que saque la comida",
+// "¿qué tengo el jueves?", "¿tengo algo pasado mañana?"
+const DIAS_SEM = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const NUM_TXT = { una: 1, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, quince: 15, veinte: 20, treinta: 30, cuarenta: 40 };
+
+function parseAgendaLocal(text) {
+  let s = ' ' + norm(text).replace(/[¿?¡!]/g, ' ').replace(/\s+/g, ' ') + ' ';
+  const now = new Date();
+  const crear = /\b(recordame|recorda|recordarme|avisame|agendame|agenda(r|me)?|anota(me|r)?|agrega(me|r)?|pone(me)?)\b/.test(s);
+  const consultar = /\b(que tengo|tengo algo|estoy libre|estoy ocupad\w*|hay algo)\b/.test(s);
+  if (!crear && !consultar) return null;
+  const aviso = /\b(recordame|recorda|recordarme|avisame)\b/.test(s);
+  const used = [];
+  const cut = re => { const m = s.match(re); if (m) { used.push(m[0]); s = s.replace(m[0], ' '); } return m; };
+
+  // --- Hora ---
+  let hora = null, fecha = null, m;
+  if ((m = cut(/ en (\d+|\w+) (minutos?|min|horas?|hs)\b/))) {          // "en 20 minutos", "en una hora"
+    const n = Number(m[1]) || NUM_TXT[m[1]]; if (!n) return null;
+    const t = new Date(now.getTime() + n * (m[2].startsWith('h') ? 3600000 : 60000));
+    fecha = ymd(t); hora = hhmm(t);
+  } else if ((m = cut(/ a las? (\d{1,2})(?:[:.](\d{2})| y (media|cuarto))?(?: ?(?:hs|horas|h))?(?: de la (manana|tarde|noche)| del mediodia)?\b/))) {
+    let h = Number(m[1]), mi = m[2] ? Number(m[2]) : m[3] === 'media' ? 30 : m[3] === 'cuarto' ? 15 : 0;
+    if ((m[4] === 'tarde' || m[4] === 'noche') && h < 12) h += 12;
+    if (m[4] === 'manana' && h === 12) h = 0;
+    if (h > 23 || mi > 59) return null;
+    hora = `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
+  } else if ((m = cut(/ (al mediodia|a la manana|a la tarde|a la noche)\b/))) {
+    hora = { 'al mediodia': '12:00', 'a la manana': '09:00', 'a la tarde': '16:00', 'a la noche': '21:00' }[m[1]];
+  }
+
+  // --- Fecha ---
+  if (!fecha) {
+    if ((m = cut(/ pasado manana\b/))) fecha = ymd(addDays(now, 2));
+    else if ((m = cut(/ (hoy|esta (tarde|noche|manana))\b/))) {
+      fecha = ymd(now);
+      if (!hora && m[2]) hora = { tarde: '16:00', noche: '21:00', manana: '09:00' }[m[2]];
+    }
+    else if ((m = cut(/ manana\b/))) fecha = ymd(addDays(now, 1));
+    else if ((m = cut(/ (?:el |este |el proximo |proximo )?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?: (\d{1,2}))?\b/))) {
+      const target = DIAS_SEM.indexOf(m[1]);
+      let d = addDays(startOfDay(now), (target - now.getDay() + 7) % 7);
+      if (d.getTime() === startOfDay(now).getTime() && hora && parseYmd(ymd(now), ...hora.split(':').map(Number)) < now) d = addDays(d, 7);
+      fecha = ymd(d);
+    }
+    else {
+      const MES_RX = MESES.join('|');
+      let dia = null, mes = null, explicito = false;
+      if ((m = cut(new RegExp(` (?:el )?(\\d{1,2}) de (${MES_RX})\\b`)))) { dia = +m[1]; mes = MESES.indexOf(m[2]); explicito = true; }
+      else if ((m = cut(/ (?:el )?(\d{1,2})\/(\d{1,2})\b/))) { dia = +m[1]; mes = +m[2] - 1; explicito = true; }
+      else if ((m = cut(/ el (\d{1,2})\b/))) { dia = +m[1]; mes = now.getMonth(); }
+      if (dia && dia <= 31 && mes >= 0 && mes <= 11) {
+        let d = new Date(now.getFullYear(), mes, dia);
+        if (d < startOfDay(now)) d = explicito ? new Date(now.getFullYear() + 1, mes, dia) : new Date(now.getFullYear(), mes + 1, dia);
+        fecha = ymd(d);
+      }
+    }
+  }
+
+  if (consultar && !crear) {
+    if (!fecha) fecha = ymd(now);
+    return { accion: 'consultar', desde: fecha, hasta: fecha };
+  }
+  if (!fecha && hora) {                                       // solo hora: hoy, o mañana si ya pasó
+    const t = parseYmd(ymd(now), ...hora.split(':').map(Number));
+    fecha = ymd(t > now ? now : addDays(now, 1));
+  }
+  if (!fecha) return null;                                     // sin fecha clara: que decida la IA
+  if (aviso && !hora) hora = '09:00';                         // un recordatorio sin hora suena a las 9
+
+  // --- Título: lo que queda sin las palabras de pedido ---
+  let titulo = s
+    .replace(/\b(por favor|porfa|che)\b/g, ' ')
+    .replace(/\b(recordame|recorda|recordarme|avisame|agendame|agendar|agenda|anotame|anota|anotar|agregame|agrega|agregar|poneme|pone)\b/g, ' ')
+    .replace(/^\s*(que|de|para|un|una|en la agenda|en el calendario)\b/g, ' ')
+    .replace(/\b(en (la|mi) agenda|en (el|mi) calendario)\b/g, ' ')
+    .replace(/^\s*(que )?(tengo que|tengo|hay que)\b/, ' ')
+    .replace(/\s+/g, ' ').trim()
+    .replace(/^(que|de|para|el|la)\s+/, '').replace(/\s+(el|la|de|a|para)$/, '').trim();
+  if (titulo.length < 2) return null;
+  // Recupera tildes y mayúsculas del texto original cuando coincide
+  const orig = text.replace(/[¿?¡!]/g, '').split(/\s+/);
+  titulo = titulo.split(' ').map(w => orig.find(o => norm(o) === w) || w).join(' ');
+  titulo = titulo.charAt(0).toUpperCase() + titulo.slice(1);
+
+  return { accion: 'crear', titulo, fecha, hora, duracion_min: aviso ? 30 : 60, lugar: '', aviso_min: aviso ? 0 : 30, _local: true };
+}
+
 async function agendaReply(text, q) {
   if (!calReady()) return { text: '📅 Todavía no conectaste tu agenda. Seguí el instructivo y cargá la dirección y la clave en ⚙️ Ajustes → Agenda.', by: 'Agenda' };
   const quick = quickAgenda(q);
   if (quick) return quick;
-  let p;
-  try { p = await parseAgenda(text); }
-  catch (e) { throw new Error('Para entender fechas y horas necesito la IA, y no respondió. ' + e.message); }
+  // 1) La app intenta entender el pedido sola; 2) si no puede, le pide ayuda a la IA
+  let p = parseAgendaLocal(text);
+  if (!p) {
+    try { p = await parseAgenda(text); }
+    catch (e) {
+      const ocupado = /50[03]|high demand|overloaded|saturad/i.test(e.message);
+      throw new Error(ocupado
+        ? 'La IA está saturada en este momento y no pude entender la fecha. Probá decirlo así: "recordame [qué] [hoy/mañana/el jueves/el 15 de diciembre] a las [hora]".'
+        : 'No pude entender la fecha y la IA no respondió (' + e.message + ').');
+    }
+  }
   if (p.accion === 'crear') return agendaCreate(p);
   if (p.accion === 'borrar') return agendaDelete(p);
   if (p.accion === 'consultar') {
@@ -1081,7 +1206,7 @@ async function routeLocal(text) {
   if (pend) return pend;
   if (/(mi dia|resumen del dia|como viene (el|mi) dia)/.test(t)) return myDay();
   const qa = t.replace(/[¿?¡!.,]/g, '').trim();
-  if (/(\bagenda|agendame|agendar|calendario|\banota(me)?\b|recordame|recorda(me)?\b|avisame|\bturno|reunion|\bcita\b|\bevento|que tengo|tengo algo|estoy libre|estoy ocupad|cumpleanos|(cancela|borra|elimina|saca)(me|r)? (el|la|mi|lo de)\b)/.test(qa)) {
+  if (/(\bagenda|agendame|agendar|calendario|\banota(me)?\b|recordame|recorda(me)?\b|recordarme|avisame|\bagrega(me)?\b|\bturno|reunion|\bcita\b|\bevento|que tengo|tengo algo|estoy libre|estoy ocupad|cumpleanos|(cancela|borra|elimina|saca)(me|r)? (el|la|mi|lo de)\b)/.test(qa)) {
     const a = await agendaReply(text, qa);
     if (a) return a;
   }
