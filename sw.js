@@ -1,6 +1,6 @@
 // Service worker: permite instalar la app y que abra rápido.
 // Al publicar cambios, subí el número de versión.
-const VERSION = 'asistente-v12';
+const VERSION = 'asistente-v13';
 const SHELL = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 const ESPERA_MAX = 1200;   // ms: si internet tarda más, abre con la copia guardada
 

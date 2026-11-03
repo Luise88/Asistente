@@ -95,6 +95,9 @@
   .act.no { background: #334155; color: var(--text); }
   .act.small { flex: 0 0 auto; padding: 6px 10px; }
   .act:disabled { opacity: .45; }
+  .wa-text, .wa-num { width: 100%; margin-top: 10px; background: var(--panel2); border: 1px solid #334155; color: var(--text);
+    border-radius: 10px; padding: 10px 12px; font-size: 15px; font-family: inherit; resize: vertical; }
+  .wa-text:focus, .wa-num:focus { outline: none; border-color: var(--accent); }
   .aviso-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
   .aviso-row small { color: var(--muted); margin-right: 2px; }
   .av { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 14px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
@@ -241,7 +244,13 @@
     <input id="calToken" type="password" placeholder="La que aparece al ejecutar 'configurar'" autocomplete="off">
     <div class="hint">Ver INSTRUCTIVO-AGENDA.md. La clave queda solo en este teléfono.</div>
 
-    <h3>6. Probar conexión</h3>
+    <h3>6. WhatsApp</h3>
+    <label for="areaCode">Tu característica (para números sin código de área)</label>
+    <input id="areaCode" type="text" inputmode="numeric" placeholder="297">
+    <div class="hint" id="aliasInfo"></div>
+    <div class="btns" style="margin-top:6px"><button class="btn ghost" id="clearAliases">Olvidar contactos recordados</button></div>
+
+    <h3>7. Probar conexión</h3>
     <div class="btns" style="margin-top:6px">
       <button class="btn ghost" id="testGemini">Probar Gemini</button>
       <button class="btn ghost" id="testClaude">Probar Claude</button>
@@ -254,7 +263,7 @@
     <div class="btns">
       <button class="btn warn" id="clearChat">Borrar conversación</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:14px">Versión 12 · Etapa 3 (agenda)</div>
+    <div class="hint" style="text-align:center;margin-top:14px">Versión 13 · Etapa 4 (WhatsApp)</div>
     <div class="btns">
       <button class="btn ghost" id="closeSettings">Cancelar</button>
       <button class="btn primary" id="saveSettings">Guardar</button>
@@ -271,7 +280,7 @@ const DEFAULTS = {
   claudeKey: '', claudeModel: 'claude-haiku-5-5',
   userName: '', voiceName: '', autoSpeak: true, autoSend: true,
   useGPS: true, city: '', cityGeo: null,
-  calUrl: '', calToken: '',
+  calUrl: '', calToken: '', areaCode: '297', aliases: {},
   alertZone: 'Escalante, Comodoro', tideLink: 'https://tablademareas.com/ar/chubut/comodoro-rivadavia'
 };
 const MAX_HISTORY = 12; // mensajes recordados para dar contexto
@@ -303,7 +312,7 @@ function systemPrompt(extra) {
     'No uses tablas, símbolos raros ni listas largas. Si hace falta enumerar, usá frases cortas.',
     'El clima, el mar y las noticias los resuelve la app: si te los piden sin datos, sugerí decir "clima", "mar" o "noticias", o tocar los botones de abajo.',
     'La agenda (Google Calendar) la maneja la app: si te piden agendar o consultar algo y llega a vos, sugerí decirlo con día y hora, por ejemplo "agendame dentista el jueves a las 10".',
-    'Si te piden algo que todavía no podés hacer (mandar mensajes o correos), ',
+    'Los WhatsApp los arma la app: si te piden mandar uno, sugerí decir "mandale un WhatsApp a [nombre] que [mensaje]". Los correos todavía no están disponibles: si te piden algo que no podés hacer, ',
     'decí con naturalidad que esa función se está agregando pronto, y ayudá en lo que puedas.',
     'Si no sabés algo o puede estar desactualizado, decilo.'
   ].join(' ') + (extra ? '\n\n' + extra : '');
@@ -1032,7 +1041,8 @@ async function handlePending(t) {
   const num = q.match(/^borra(?:r)?(?: el| la| opcion)? (\d)/);
   if (!yes && !no && !num) { pending = null; return null; }   // cambió de tema
   const p = pending; pending = null;
-  if (no) return { text: 'Listo, no hago nada.', by: 'Agenda' };
+  if (no) return { text: 'Listo, no hago nada.', by: p.type === 'whatsapp' ? 'WhatsApp' : 'Agenda' };
+  if (p.type === 'whatsapp') { pending = p; return { text: 'Tocá 📤 Abrir WhatsApp en la tarjeta para enviarlo (por seguridad, WhatsApp necesita que lo toques vos).', by: 'WhatsApp' }; }
   if (p.type === 'crear') {
     const r = await cal('crear', p.data);
     const ev = r.evento, d = new Date(ev.todoElDia ? parseYmd(ev.fecha) : ev.inicio);
@@ -1193,6 +1203,165 @@ async function agendaToday() {
   return b;
 }
 
+/* ============ WHATSAPP (arma el mensaje y abre WhatsApp: vos tocás enviar) ============ */
+// Entiende: "mandale un whatsapp a mamá que paso a las 8", "mensaje a Juan: llego tarde",
+// "escribile a Pedro diciendo que mañana no voy", "decile a mi hermana que la llamo después"
+function parseWhatsApp(text) {
+  const t = text.trim().replace(/[.!]+$/, '');
+  const verbo = '(?:che\\s+)?(?:por favor\\s+)?(?:mand[aá](?:le|me)?|envi[aá](?:le|me)?|escrib[ií](?:le)?|pas[aá]le)';
+  const medio = '(?:un\\s+|el\\s+)?(?:whats ?app|wasap|guasap|wsp|wpp|mensaje|msj|mensajito)';
+  const corte = '(?:\\s*[:,]\\s*|\\s+(?:que|diciendo(?:le)?(?:\\s+que)?|para decirle que|y decile que)\\s+)';
+  const pats = [
+    new RegExp(`^${verbo}\\s+${medio}\\s+(?:a|para)\\s+(.+?)${corte}(.+)$`, 'i'),
+    new RegExp(`^${medio}\\s+(?:a|para)\\s+(.+?)${corte}(.+)$`, 'i'),
+    new RegExp(`^(?:che\\s+)?(?:escrib[ií]le|dec[ií]le|avis[aá]le|mand[aá]le)\\s+a\\s+(.+?)${corte}(.+)$`, 'i'),
+    new RegExp(`^${verbo}\\s+${medio}\\s+(?:a|para)\\s+(.+)$`, 'i'),      // sin texto: se completa en la tarjeta
+  ];
+  for (const re of pats) {
+    const m = t.match(re);
+    if (m) {
+      const quien = m[1].replace(/^(?:mi|mis|el|la)\s+/i, '').trim();
+      return { quien, texto: (m[2] || '').trim() };
+    }
+  }
+  return null;
+}
+
+// "que paso a las 8" → "Paso a las 8" (sin IA: solo saca el "que" inicial)
+function directoSimple(s) {
+  s = s.replace(/^que\s+/i, '').trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
+// Con IA: pasa a estilo directo ("que me llame" → "Llamame"). Si tarda o falla, usa la versión simple.
+async function directoIA(quien, s) {
+  if (!s || (!cfg.geminiKey && !cfg.claudeKey)) return directoSimple(s);
+  const sys = 'Convertí un pedido indirecto en el mensaje de WhatsApp que el usuario le manda a otra persona. ' +
+    'Español rioplatense con voseo, natural y breve, en primera persona del usuario y hablándole al destinatario. ' +
+    'No agregues saludos ni firmas que no estén, no inventes datos. Devolvé SOLO el texto del mensaje, sin comillas. ' +
+    'Ejemplos: "que paso a las 8" → "Paso a las 8"; "que me llame cuando pueda" → "Llamame cuando puedas"; ' +
+    '"que la quiero mucho" → "Te quiero mucho"; "que si necesita algo del super" → "¿Necesitás algo del super?"';
+  try {
+    const r = await Promise.race([
+      askAI([{ role: 'user', content: `Destinatario: ${quien}. Pedido: ${s}` }], sys, { raw: true }),
+      sleep(8000).then(() => { throw new Error('timeout'); })
+    ]);
+    const out = r.text.trim().replace(/^["“«]|["”»]$/g, '');
+    return out && out.length < 600 ? out : directoSimple(s);
+  } catch (e) { return directoSimple(s); }
+}
+
+// Números argentinos al formato que pide WhatsApp: 54 9 + característica + número (sin 0 ni 15)
+function waNumero(raw) {
+  if (!raw) return '';
+  const intl = /^\s*\+/.test(raw);
+  let d = String(raw).replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (intl && !d.startsWith('54')) return d;                     // número de otro país
+  if (d.startsWith('54')) { d = d.slice(2); if (d.startsWith('9')) d = d.slice(1); }
+  if (d.startsWith('0')) d = d.slice(1);
+  if (d.length === 12) {                                          // característica + 15 + número
+    for (const n of [2, 3, 4]) if (d.substr(n, 2) === '15') { d = d.slice(0, n) + d.slice(n + 2); break; }
+  }
+  const area = (cfg.areaCode || '297').replace(/\D/g, '');
+  if (d.length === 9 && d.startsWith('15')) d = d.slice(2);       // 15 + número local
+  if (d.length <= 8) d = area + d;                                // número local sin característica
+  return d.length === 10 ? '549' + d : '';
+}
+function waBonito(n) {
+  if (!n) return '';
+  return n.startsWith('549') ? `+54 9 ${n.slice(3, n.length - 7)} ${n.slice(-7, -4)}-${n.slice(-4)}` : '+' + n;
+}
+const aliasKey = s => norm(s).replace(/[^a-z0-9ñ ]/g, '').trim();
+
+async function buscarContacto(quien) {
+  const al = (cfg.aliases || {})[aliasKey(quien)];
+  if (al) return { lista: [{ nombre: al.nombre, numero: al.numero }], fuente: 'alias' };
+  if (!calReady()) return { lista: [], aviso: '' };
+  try {
+    const r = await cal('contactos', { q: quien });
+    const lista = [];
+    (r.contactos || []).forEach(c => c.telefonos.forEach(t => {
+      const n = waNumero(t.numero);
+      if (n && !lista.some(x => x.numero === n)) lista.push({ nombre: c.nombre, numero: n, tipo: t.tipo });
+    }));
+    return { lista: lista.slice(0, 6), fuente: 'google' };
+  } catch (e) {
+    const viejo = /desconocida|People API/i.test(e.message);
+    return { lista: [], aviso: viejo ? 'Para buscar en tus contactos de Google falta actualizar el script (ver instructivo).' : e.message };
+  }
+}
+
+async function whatsappReply(p) {
+  const [res, texto] = await Promise.all([buscarContacto(p.quien), directoIA(p.quien, p.texto)]);
+  const lista = res.lista;
+  pending = { type: 'whatsapp', quien: p.quien, opciones: lista, sel: lista.length === 1 ? lista[0] : null };
+  let destino;
+  if (lista.length === 1) {
+    destino = `<div class="desc">${escapeHtml(lista[0].nombre)} · ${escapeHtml(waBonito(lista[0].numero))}</div>`;
+  } else if (lista.length > 1) {
+    destino = '<div class="sub">¿A cuál?</div><div class="aviso-row">' + lista.map((c, i) =>
+      `<button class="av" data-wa-pick="${i}">${escapeHtml(c.nombre)} · ${escapeHtml(waBonito(c.numero).slice(-8))}${c.tipo ? ' (' + escapeHtml(c.tipo) + ')' : ''}</button>`).join('') + '</div>';
+  } else {
+    destino = `<div class="desc">No encontré a "${escapeHtml(p.quien)}" en tus contactos.${res.aviso ? ' ' + escapeHtml(res.aviso) : ''}</div>` +
+      '<div class="aviso-row">' + ('contacts' in navigator && 'ContactsManager' in window ? '<button class="av" data-wa-contacts>📇 Elegir de la agenda del teléfono</button>' : '') +
+      '</div><input class="wa-num" type="tel" placeholder="…o escribí el número (ej: 297 4123456)">' +
+      '<div class="upd">Si lo dejás vacío, WhatsApp te deja elegir el chat.</div>';
+  }
+  const html = `<h4>💬 WhatsApp para ${escapeHtml(p.quien)}</h4>${destino}` +
+    `<textarea class="wa-text" rows="3" placeholder="Escribí el mensaje">${escapeHtml(texto)}</textarea>` +
+    '<div class="btn-row"><button class="act yes" data-wa-send>📤 Abrir WhatsApp</button><button class="act no" data-say="No">✖ Cancelar</button></div>' +
+    '<div class="upd">Revisá o corregí el texto. Se abre WhatsApp con el mensaje listo y vos tocás enviar.</div>';
+  const speech = texto ? `Le escribo a ${p.quien}: ${texto}. Revisalo y tocá Abrir WhatsApp.` : `¿Qué le querés decir a ${p.quien}? Escribilo y tocá Abrir WhatsApp.`;
+  return { html, speech, text: `Mensaje de WhatsApp para ${p.quien}: ${texto}`, by: 'WhatsApp' };
+}
+
+// Botones de la tarjeta de WhatsApp
+chat.addEventListener('click', async e => {
+  const pick = e.target.closest('button[data-wa-pick]');
+  const agenda = e.target.closest('button[data-wa-contacts]');
+  const enviar = e.target.closest('button[data-wa-send]');
+  if (!pick && !agenda && !enviar) return;
+  const card = e.target.closest('.msg');
+  if (!pending || pending.type !== 'whatsapp') { if (enviar) enviar.disabled = true; return; }
+
+  if (pick) {
+    pending.sel = pending.opciones[Number(pick.dataset.waPick)];
+    card.querySelectorAll('[data-wa-pick]').forEach(x => x.classList.toggle('on', x === pick));
+  }
+  if (agenda) {
+    try {
+      const [c] = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+      if (!c || !c.tel || !c.tel.length) return;
+      const n = waNumero(c.tel[0]);
+      if (!n) { alertMsg('Ese contacto no tiene un número de celular válido.'); return; }
+      pending.sel = { nombre: (c.name && c.name[0]) || pending.quien, numero: n };
+      agenda.textContent = `✅ ${pending.sel.nombre} · ${waBonito(n)}`; agenda.classList.add('on');
+    } catch (err) { /* el usuario cerró la agenda */ }
+  }
+  if (enviar) {
+    const texto = (card.querySelector('.wa-text') || {}).value || '';
+    const tipeado = (card.querySelector('.wa-num') || {}).value || '';
+    let sel = pending.sel;
+    if (!sel && tipeado.trim()) {
+      const n = waNumero(tipeado);
+      if (!n) { alertMsg('Ese número no parece válido. Probá con característica: 297 4123456.'); return; }
+      sel = { nombre: pending.quien, numero: n };
+    }
+    if (!sel && pending.opciones.length > 1) { alertMsg('Elegí a cuál de los contactos le escribo.'); return; }
+    const url = sel ? `https://wa.me/${sel.numero}?text=${encodeURIComponent(texto)}` : `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.open(url, '_blank');
+    if (sel) {                                       // recuerda a quién es "mamá" para la próxima
+      cfg.aliases = cfg.aliases || {};
+      cfg.aliases[aliasKey(pending.quien)] = { nombre: sel.nombre, numero: sel.numero };
+      store('cfg', cfg);
+    }
+    card.querySelectorAll('button').forEach(x => { if (!x.classList.contains('speak')) x.disabled = true; });
+    const q = pending.quien; pending = null;
+    addMsg('bot', `✅ Abrí WhatsApp con el mensaje para ${sel ? sel.nombre : q}. Tocá enviar allá.`, 'WhatsApp');
+  }
+});
+function alertMsg(s) { addMsg('err', '⚠️ ' + s); }
+
 /* ============ MI DÍA ============ */
 async function myDay() {
   const h = new Date().getHours();
@@ -1221,6 +1390,8 @@ async function routeLocal(text) {
   const t = norm(text);
   const pend = await handlePending(t);
   if (pend) return pend;
+  const wa = parseWhatsApp(text);
+  if (wa) return whatsappReply(wa);
   if (/(mi dia|resumen del dia|como viene (el|mi) dia)/.test(t)) return myDay();
   const qa = t.replace(/[¿?¡!.,]/g, '').trim();
   if (/(\bagenda|agendame|agendar|calendario|\banota(me)?\b|recordame|recorda(me)?\b|recordarme|avisame|\bagrega(me)?\b|\bturno|reunion|\bcita\b|\bevento|que tengo|tengo algo|estoy libre|estoy ocupad|cumpleanos|(cancela|borra|elimina|saca)(me|r)? (el|la|mi|lo de)\b)/.test(qa)) {
@@ -1433,6 +1604,9 @@ function openSettings() {
   $('autoSpeak').checked = cfg.autoSpeak; $('autoSend').checked = cfg.autoSend;
   $('useGPS').checked = cfg.useGPS; $('city').value = cfg.city;
   $('calUrl').value = cfg.calUrl; $('calToken').value = cfg.calToken;
+  $('areaCode').value = cfg.areaCode || '297';
+  const na = Object.keys(cfg.aliases || {}).length;
+  $('aliasInfo').textContent = na ? `Contactos recordados: ${Object.entries(cfg.aliases).map(([k, v]) => k + ' → ' + v.nombre).join(', ')}` : 'Cuando elegís un contacto, la app lo recuerda para la próxima vez.';
   $('alertZone').value = cfg.alertZone; $('tideLink').value = cfg.tideLink;
   $('testStatus').textContent = '';
   $('settings').classList.add('open');
@@ -1444,7 +1618,7 @@ function readForm() {
     userName: $('userName').value.trim(), voiceName: $('voiceSel').value,
     autoSpeak: $('autoSpeak').checked, autoSend: $('autoSend').checked,
     useGPS: $('useGPS').checked, city: $('city').value.trim(),
-    calUrl: $('calUrl').value.trim(), calToken: $('calToken').value.trim(),
+    calUrl: $('calUrl').value.trim(), calToken: $('calToken').value.trim(), areaCode: $('areaCode').value.replace(/\D/g, '') || '297',
     alertZone: $('alertZone').value.trim(), tideLink: $('tideLink').value.trim()
   };
 }
@@ -1465,6 +1639,10 @@ async function test(fn, name) {
 }
 $('testGemini').onclick = () => test(askGemini, 'Gemini');
 $('testClaude').onclick = () => test(askClaude, 'Claude');
+$('clearAliases').onclick = () => {
+  cfg.aliases = {}; store('cfg', cfg);
+  $('aliasInfo').textContent = 'Listo: la app ya no recuerda ningún contacto.';
+};
 $('testCal').onclick = async () => {
   const saved = cfg; cfg = Object.assign({}, cfg, readForm());
   const st = $('testStatus'); st.style.color = 'var(--muted)'; st.textContent = 'Probando agenda…';
