@@ -95,6 +95,10 @@
   .act.no { background: #334155; color: var(--text); }
   .act.small { flex: 0 0 auto; padding: 6px 10px; }
   .act:disabled { opacity: .45; }
+  .aviso-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+  .aviso-row small { color: var(--muted); margin-right: 2px; }
+  .av { background: var(--panel2); border: 1px solid #334155; color: var(--text); border-radius: 14px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+  .av.on { background: var(--accent2); border-color: var(--accent2); color: white; }
 
   /* Menú de noticias */
   footer { position: relative; }
@@ -250,7 +254,7 @@
     <div class="btns">
       <button class="btn warn" id="clearChat">Borrar conversación</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:14px">Versión 11 · Etapa 3 (agenda)</div>
+    <div class="hint" style="text-align:center;margin-top:14px">Versión 12 · Etapa 3 (agenda)</div>
     <div class="btns">
       <button class="btn ghost" id="closeSettings">Cancelar</button>
       <button class="btn primary" id="saveSettings">Guardar</button>
@@ -964,7 +968,7 @@ async function parseAgenda(text) {
 Próximos días: ${prox}.
 Devolvé SOLO un objeto JSON, sin texto extra, con:
 - "accion": "crear", "consultar", "borrar" o "ninguna".
-- Para "crear": "titulo" (corto, con mayúscula inicial, sin palabras como "agendame" o "recordame"), "fecha" (YYYY-MM-DD), "hora" ("HH:MM" 24 h, o null si no dijo hora), "duracion_min" (60 si no lo dijo; 30 para llamadas o recordatorios), "lugar" ("" si no dijo), "aviso_min" (0 si dijo "recordame" o "avisame"; si no, 30).
+- Para "crear": "titulo" (corto, con mayúscula inicial, sin palabras como "agendame" o "recordame"), "fecha" (YYYY-MM-DD), "hora" ("HH:MM" 24 h, o null si no dijo hora), "duracion_min" (60 si no lo dijo; 30 para llamadas o recordatorios), "lugar" ("" si no dijo), "aviso_min" (si dice "X minutos/horas antes", usar eso en minutos; si no, 0 si dijo "recordame" o "avisame"; si no, 30).
 - Para "consultar": "desde" y "hasta" (YYYY-MM-DD, ambos inclusive). Sin fecha → hoy.
 - Para "borrar": "desde", "hasta" y "buscar" (palabras clave del evento a borrar).
 Reglas: "a la mañana"=09:00, "al mediodía"=12:00, "a la tarde"=16:00, "a la noche"=21:00. Un día de la semana sin fecha es el próximo (hoy solo si la hora todavía no pasó). "La semana que viene" = de lunes a domingo siguientes. "Esta semana" = de hoy al domingo. "El finde" = sábado y domingo próximos. "Pasado mañana" = hoy + 2.`;
@@ -989,9 +993,12 @@ async function agendaCreate(p) {
     lugar: p.lugar || '', recordatorioMin: allDay ? null : aviso };
   pending = { type: 'crear', data };
   const cuando = allDay ? `${longDay(ini)} · todo el día` : `${longDay(ini)} · ${hhmm(ini)} a ${hhmm(fin)}`;
-  const avisoTxt = allDay ? '' : aviso === 0 ? '🔔 Aviso a la hora del evento' : `🔔 Aviso ${aviso} min antes`;
+  const avisos = [0, 5, 10, 15, 30, 60];
+  const avisoRow = allDay ? '' : '<div class="aviso-row"><small>🔔 Aviso:</small>' + avisos.map(n =>
+    `<button class="av${n === aviso ? ' on' : ''}" data-aviso="${n}">${n === 0 ? 'a la hora' : n < 60 ? n + ' min' : '1 h'}</button>`).join('') +
+    (avisos.includes(aviso) ? '' : `<button class="av on" data-aviso="${aviso}">${aviso >= 1440 ? Math.round(aviso / 1440) + ' día' : aviso + ' min'}</button>`) + '</div>';
   const html = `<h4>📅 ¿Lo agendo?</h4><div class="confirm"><b>${escapeHtml(data.titulo)}</b><br>${escapeHtml(cuando)}` +
-    (data.lugar ? `<br>📍 ${escapeHtml(data.lugar)}` : '') + (avisoTxt ? `<br><small>${avisoTxt}</small>` : '') + '</div>' +
+    (data.lugar ? `<br>📍 ${escapeHtml(data.lugar)}` : '') + '</div>' + avisoRow +
     confirmButtons('✅ Agendar') + '<div class="upd">También podés decir "sí" o "no".</div>';
   const speech = `¿Agendo ${data.titulo}, ${allDay ? longDay(ini).toLowerCase() + ', todo el día' : longDay(ini).toLowerCase() + ' a las ' + hhmm(ini)}?`;
   return { html, speech, text: speech, by: 'Agenda (esperando confirmación)' };
@@ -1060,7 +1067,7 @@ const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', '
 const NUM_TXT = { una: 1, un: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, quince: 15, veinte: 20, treinta: 30, cuarenta: 40 };
 
 function parseAgendaLocal(text) {
-  let s = ' ' + norm(text).replace(/[¿?¡!]/g, ' ').replace(/\s+/g, ' ') + ' ';
+  let s = ' ' + norm(text).replace(/[¿?¡!,;]/g, ' ').replace(/\s+/g, ' ') + ' ';
   const now = new Date();
   const crear = /\b(recordame|recorda|recordarme|avisame|agendame|agenda(r|me)?|anota(me|r)?|agrega(me|r)?|pone(me)?)\b/.test(s);
   const consultar = /\b(que tengo|tengo algo|estoy libre|estoy ocupad\w*|hay algo)\b/.test(s);
@@ -1069,8 +1076,17 @@ function parseAgendaLocal(text) {
   const used = [];
   const cut = re => { const m = s.match(re); if (m) { used.push(m[0]); s = s.replace(m[0], ' '); } return m; };
 
+  // --- Aviso: "avisame 5 minutos antes", "con aviso de media hora", "un día antes" ---
+  let hora = null, fecha = null, m, avisoMin = null;
+  if ((m = cut(/ (?:y )?(?:con (?:un )?aviso(?: de)?|avisame|que me avise?s?|me avisas|recordamelo)? ?(\d+|media|una?|dos|tres|cinco|diez|quince|veinte|treinta|cuarenta) (minutos?|min|horas?|hs|dias?) (?:de )?antes\b/))) {
+    const n = m[1] === 'media' ? 0.5 : (Number(m[1]) || NUM_TXT[m[1]] || 0);
+    avisoMin = Math.round(n * (m[2].startsWith('d') ? 1440 : m[2].startsWith('h') ? 60 : 1));
+  } else if ((m = cut(/ (?:y )?con (?:un )?aviso de (\d+|media|una?|dos|cinco|diez|quince|veinte|treinta) (minutos?|min|horas?|hs|dias?)\b/))) {
+    const n = m[1] === 'media' ? 0.5 : (Number(m[1]) || NUM_TXT[m[1]] || 0);
+    avisoMin = Math.round(n * (m[2].startsWith('d') ? 1440 : m[2].startsWith('h') ? 60 : 1));
+  } else if ((m = cut(/ (?:y )?(?:avisame |con aviso )?(?:el dia anterior|un dia antes)\b/))) avisoMin = 1440;
+
   // --- Hora ---
-  let hora = null, fecha = null, m;
   if ((m = cut(/ en (\d+|\w+) (minutos?|min|horas?|hs)\b/))) {          // "en 20 minutos", "en una hora"
     const n = Number(m[1]) || NUM_TXT[m[1]]; if (!n) return null;
     const t = new Date(now.getTime() + n * (m[2].startsWith('h') ? 3600000 : 60000));
@@ -1128,6 +1144,7 @@ function parseAgendaLocal(text) {
   let titulo = s
     .replace(/\b(por favor|porfa|che)\b/g, ' ')
     .replace(/\b(recordame|recorda|recordarme|avisame|agendame|agendar|agenda|anotame|anota|anotar|agregame|agrega|agregar|poneme|pone)\b/g, ' ')
+    .replace(/\s+y\s*$/, ' ')
     .replace(/^\s*(que|de|para|un|una|en la agenda|en el calendario)\b/g, ' ')
     .replace(/\b(en (la|mi) agenda|en (el|mi) calendario)\b/g, ' ')
     .replace(/^\s*(que )?(tengo que|tengo|hay que)\b/, ' ')
@@ -1135,11 +1152,11 @@ function parseAgendaLocal(text) {
     .replace(/^(que|de|para|el|la)\s+/, '').replace(/\s+(el|la|de|a|para)$/, '').trim();
   if (titulo.length < 2) return null;
   // Recupera tildes y mayúsculas del texto original cuando coincide
-  const orig = text.replace(/[¿?¡!]/g, '').split(/\s+/);
+  const orig = text.replace(/[¿?¡!,;]/g, '').split(/\s+/);
   titulo = titulo.split(' ').map(w => orig.find(o => norm(o) === w) || w).join(' ');
   titulo = titulo.charAt(0).toUpperCase() + titulo.slice(1);
 
-  return { accion: 'crear', titulo, fecha, hora, duracion_min: aviso ? 30 : 60, lugar: '', aviso_min: aviso ? 0 : 30, _local: true };
+  return { accion: 'crear', titulo, fecha, hora, duracion_min: aviso ? 30 : 60, lugar: '', aviso_min: avisoMin ?? (aviso ? 0 : 30), _local: true };
 }
 
 async function agendaReply(text, q) {
@@ -1379,6 +1396,13 @@ mic.onclick = () => listening ? stopListening() : startListening();
 $('send').onclick = () => send(txt.value);
 txt.addEventListener('keydown', e => { if (e.key === 'Enter') send(txt.value); });
 document.querySelectorAll('#quick .chip[data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
+// Elegir cuánto antes avisa, en la tarjeta de confirmación
+chat.addEventListener('click', e => {
+  const b = e.target.closest('button[data-aviso]');
+  if (!b || !pending || pending.type !== 'crear') return;
+  pending.data.recordatorioMin = Number(b.dataset.aviso);
+  b.parentElement.querySelectorAll('.av').forEach(x => x.classList.toggle('on', x === b));
+});
 // Botones dentro de las tarjetas (Agendar / Cancelar / Borrar)
 chat.addEventListener('click', e => {
   const b = e.target.closest('button[data-say]');
