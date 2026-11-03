@@ -265,7 +265,7 @@
     </div>
     <div class="btns"><button class="btn ghost" id="repairApp">🛠 Reparar app (si no abre o no se actualiza)</button></div>
     <div class="hint">Borra la copia guardada de la app y la vuelve a descargar. Tus claves y ajustes NO se borran.</div>
-    <div class="hint" style="text-align:center;margin-top:14px">Versión 14 · Etapa 4 (WhatsApp)</div>
+    <div class="hint" style="text-align:center;margin-top:14px">Versión 15 · Etapa 4 (WhatsApp)</div>
     <div class="btns">
       <button class="btn ghost" id="closeSettings">Cancelar</button>
       <button class="btn primary" id="saveSettings">Guardar</button>
@@ -1663,19 +1663,25 @@ $('clearChat').onclick = () => {
 paintMute();
 renderHistory();
 if (!cfg.geminiKey && !cfg.claudeKey) setTimeout(openSettings, 400);
-// Reparación: borra service worker y copias guardadas (no toca claves ni ajustes)
-async function repararApp() {
+// Reparación: quita el service worker y las copias guardadas SOLO del Asistente
+// (no toca NOW ni otras apps del mismo sitio). Tus claves y ajustes no se borran.
+async function limpiarAsistente() {
   try {
+    const base = new URL('./', location.href).href;
     const regs = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(regs.map(r => r.unregister()));
+    await Promise.all(regs.filter(r => r.scope.startsWith(base)).map(r => r.unregister()));
+  } catch (e) { /* nada */ }
+  try {
     const keys = await caches.keys();
-    await Promise.all(keys.map(k => caches.delete(k)));
-  } catch (e) { /* seguimos igual */ }
+    await Promise.all(keys.filter(k => k.startsWith('asistente')).map(k => caches.delete(k)));
+  } catch (e) { /* nada */ }
+}
+async function repararApp() {
+  await limpiarAsistente();
   location.replace(location.pathname + '?r=' + Date.now());
 }
 $('repairApp').onclick = repararApp;
-if (/[?&]reparar\b/.test(location.search)) repararApp();
-else if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+limpiarAsistente();   // por ahora la app funciona sin modo "sin conexión"
 </script>
 </body>
 </html>
